@@ -24,6 +24,8 @@ out/
 # CMake temporary files
 CMakeFiles/
 CMakeCache.txt
+*.cmake
+!ext/nanogui/resources/bin2c.cmake
 Makefile
 CMakeLists.txt.user
 rules.ninja

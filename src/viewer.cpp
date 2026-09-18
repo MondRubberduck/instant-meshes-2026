@@ -2809,8 +2809,15 @@ void Viewer::refreshStrokes() {
         }
     }
 
+    Float scale = mRes.scale();
+    Float brush_radius = (scale > 0.0f) ? (scale * 1.5f) : (mMeshStats.mAverageEdgeLength * 5.0f);
+    Float sigma = brush_radius * 0.5f;
+    Float two_sigma_sq = 2.0f * sigma * sigma;
+
     for (auto const &stroke : mStrokes) {
         auto const &curve = stroke.second;
+        if (curve.size() < 2)
+            continue;
         for (uint32_t i=0; i<curve.size(); ++i) {
             Vector3f tangent;
             if (i == 0)
@@ -2819,20 +2826,52 @@ void Viewer::refreshStrokes() {
                 tangent = curve[curve.size()-1].p - curve[curve.size()-2].p;
             else
                 tangent = curve[i+1].p - curve[i-1].p;
+            if (tangent.squaredNorm() < 1e-8f)
+                continue;
             tangent.normalize();
 
-            for (int j=0; j<3; ++j) {
-                uint32_t v = F(j, curve[i].f);
-                Vector3f tlocal = tangent;
-                tlocal -= tlocal.dot(N.col(v)) * N.col(v);
-                tlocal.normalize();
+            if (curve[i].f < F.cols()) {
+                for (int j=0; j<3; ++j) {
+                    uint32_t v = F(j, curve[i].f);
+                    Vector3f tlocal = tangent;
+                    tlocal -= tlocal.dot(N.col(v)) * N.col(v);
+                    if (tlocal.squaredNorm() > 1e-8f)
+                        tlocal.normalize();
 
-                mRes.CQ().col(v) = tlocal;
-                mRes.CQw()[v] = 1.0f;
+                    mRes.CQ().col(v) = tlocal;
+                    mRes.CQw()[v] = 1.0f;
 
-                if (stroke.first == 1) {
-                    mRes.CO().col(v) = curve[i].p;
-                    mRes.COw()[v] = 1.0f;
+                    if (stroke.first == 1) {
+                        mRes.CO().col(v) = curve[i].p;
+                        mRes.COw()[v] = 1.0f;
+                    }
+                }
+            }
+
+            // Expand comb stroke influence across brush radius with Gaussian falloff
+            if (mBVH && F.cols() > 0 && stroke.first == 0) {
+                std::vector<uint32_t> nearby_faces;
+                mBVH->findNearestWithRadius(curve[i].p, brush_radius, nearby_faces);
+                for (uint32_t nf : nearby_faces) {
+                    if (nf >= F.cols())
+                        continue;
+                    for (int j = 0; j < 3; ++j) {
+                        uint32_t v = F(j, nf);
+                        Vector3f diff = V.col(v) - curve[i].p;
+                        Float dist_sq = diff.squaredNorm();
+                        if (dist_sq <= brush_radius * brush_radius) {
+                            Float weight = std::exp(-dist_sq / two_sigma_sq);
+                            if (weight > mRes.CQw()[v]) {
+                                Vector3f tlocal = tangent;
+                                tlocal -= tlocal.dot(N.col(v)) * N.col(v);
+                                if (tlocal.squaredNorm() > 1e-8f)
+                                    tlocal.normalize();
+
+                                mRes.CQ().col(v) = tlocal;
+                                mRes.CQw()[v] = weight;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -2951,6 +2990,7 @@ bool Viewer::mouseMotionEvent(const Vector2i &p, const Vector2i &rel,
                               int button, int modifiers) {
     if (mDrag && toolActive()) {
         mScreenCurve.push_back(p);
+        repaint();
         return true;
     }
 
@@ -3021,23 +3061,25 @@ bool Viewer::mouseButtonEvent(const Vector2i &p, int button, bool down, int modi
                     uint32_t f;
                     Float t;
 
-                    if (!mBVH->rayIntersect(ray, f, t, &uv)) {
-                        mScreenCurve.clear();
-                        return false;
+                    if (mBVH->rayIntersect(ray, f, t, &uv)) {
+                        CurvePoint pt;
+                        pt.p = ray(t);
+                        pt.n = ((1 - uv.sum()) * N.col(F(0, f)) + uv.x() * N.col(F(1, f)) + uv.y() * N.col(F(2, f))).normalized();
+                        pt.f = f;
+                        curve.push_back(pt);
                     }
-
-                    CurvePoint pt;
-                    pt.p = ray(t);
-                    pt.n = ((1 - uv.sum()) * N.col(F(0, f)) + uv.x() * N.col(F(1, f)) + uv.y() * N.col(F(2, f))).normalized();
-                    pt.f = f;
-                    curve.push_back(pt);
                 }
                 mScreenCurve.clear();
                 int strokeType = 0;
                 if (mEdgeBrush->pushed())
                     strokeType = 1;
 
-                if (smooth_curve(mBVH, mRes.E2E(), curve, attractor)) {
+                if (curve.size() >= 2) {
+                    std::vector<CurvePoint> smoothed = curve;
+                    if (smooth_curve(mBVH, mRes.E2E(), smoothed, attractor)) {
+                        curve = smoothed;
+                    }
+
                     if (attractor) {
                         std::vector<uint32_t> curve_faces;
                         for (auto it = curve.rbegin(); it != curve.rend(); ++it)
@@ -3059,6 +3101,7 @@ bool Viewer::mouseButtonEvent(const Vector2i &p, int button, bool down, int modi
                         mSolveOrientationBtn->changeCallback()(true);
                     }
                 }
+                repaint();
             }
         } else if (button == GLFW_MOUSE_BUTTON_1 && modifiers == 0) {
             mCamera.arcball.button(p, down);
