@@ -47,6 +47,7 @@ set(CORE_SOURCES
   ../src/cleanup.cpp
   ../src/dedge.cpp
   ../ext/rply/rply.c
+  ../ext/ufbx/ufbx.c
 )
 
 pybind11_add_module(pyretopo bindings.cpp ${CORE_SOURCES})
@@ -59,6 +60,7 @@ target_include_directories(pyretopo PRIVATE
   ../ext/pss
   ../ext/pcg32
   ../ext/rply
+  ../ext/ufbx
   ../ext/half
   ../ext/tbb/include
 )
@@ -66,6 +68,7 @@ target_include_directories(pyretopo PRIVATE
 target_link_libraries(pyretopo PRIVATE tbb_static)
 
 if(MSVC)
+  set_source_files_properties(../ext/rply/rply.c ../ext/ufbx/ufbx.c PROPERTIES COMPILE_FLAGS "/wd4127 /wd4244 /wd4701")
   target_compile_definitions(pyretopo PRIVATE _CRT_SECURE_NO_WARNINGS __TBB_NO_IMPLICIT_LINKAGE)
   target_compile_options(pyretopo PRIVATE /MP)
 endif()

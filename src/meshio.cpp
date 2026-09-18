@@ -13,6 +13,7 @@
 
 #include "meshio.h"
 #include "normal.h"
+#include "ufbx.h"
 #include <unordered_map>
 #include <fstream>
 #if !defined(_WIN32)
@@ -33,10 +34,12 @@ void load_mesh_or_pointcloud(const std::string &filename, MatrixXu &F, MatrixXf 
         load_ply(filename, F, V, N, false, progress);
     else if (extension == ".obj")
         load_obj(filename, F, V, progress);
+    else if (extension == ".fbx")
+        load_fbx(filename, F, V, N, progress);
     else if (extension == ".aln")
         load_pointcloud(filename, V, N, progress);
     else
-        throw std::runtime_error("load_mesh_or_pointcloud: Unknown file extension \"" + extension + "\" (.ply/.obj/.aln are supported)");
+        throw std::runtime_error("load_mesh_or_pointcloud: Unknown file extension \"" + extension + "\" (.ply/.obj/.fbx/.aln are supported)");
 }
 
 void write_mesh(const std::string &filename, const MatrixXu &F,
@@ -445,6 +448,100 @@ void load_obj(const std::string &filename, MatrixXu &F, MatrixXf &V,
     V.resize(3, vertices.size());
     for (uint32_t i=0; i<vertices.size(); ++i)
         V.col(i) = positions.at(vertices[i].p-1);
+
+    cout << "done. (V=" << V.cols() << ", F=" << F.cols() << ", took "
+         << timeString(timer.value()) << ")" << endl;
+}
+
+void load_fbx(const std::string &filename, MatrixXu &F, MatrixXf &V, MatrixXf &N,
+              const ProgressCallback &progress) {
+    Timer<> timer;
+    cout << "Loading \"" << filename << "\" .. ";
+    cout.flush();
+
+    ufbx_load_opts opts = { 0 };
+    opts.target_axes = ufbx_axes_right_handed_y_up;
+    opts.target_unit_meters = 1.0f;
+    opts.generate_missing_normals = true;
+
+    ufbx_error error;
+    ufbx_scene *scene = ufbx_load_file(filename.c_str(), &opts, &error);
+    if (!scene) {
+        throw std::runtime_error("Failed to load FBX file \"" + filename + "\": " + std::string(error.description.data));
+    }
+
+    std::vector<Vector3f> positions;
+    std::vector<uint32_t> indices;
+
+    auto process_mesh = [&](const ufbx_mesh *mesh, const ufbx_matrix &geom_to_world) {
+        if (!mesh || mesh->num_vertices == 0 || mesh->faces.count == 0)
+            return;
+
+        uint32_t vertex_offset = (uint32_t) positions.size();
+
+        // 1. Transform and store all logical vertices
+        for (size_t vi = 0; vi < mesh->num_vertices; ++vi) {
+            ufbx_vec3 local_pos = mesh->vertices.data[vi];
+            ufbx_vec3 world_pos = ufbx_transform_position(&geom_to_world, local_pos);
+            positions.push_back(Vector3f((Float) world_pos.x, (Float) world_pos.y, (Float) world_pos.z));
+        }
+
+        // 2. Triangulate faces
+        size_t max_tri_buf = std::max<size_t>(32, (size_t) mesh->max_face_triangles * 3 + 3);
+        std::vector<uint32_t> tri_buf(max_tri_buf);
+
+        for (size_t fi = 0; fi < mesh->faces.count; ++fi) {
+            ufbx_face face = mesh->faces.data[fi];
+            if (face.num_indices < 3)
+                continue;
+
+            uint32_t num_tris = ufbx_triangulate_face(tri_buf.data(), tri_buf.size(), mesh, face);
+            for (uint32_t ti = 0; ti < num_tris; ++ti) {
+                uint32_t c0 = tri_buf[ti * 3 + 0];
+                uint32_t c1 = tri_buf[ti * 3 + 1];
+                uint32_t c2 = tri_buf[ti * 3 + 2];
+
+                uint32_t v0 = vertex_offset + mesh->vertex_indices.data[c0];
+                uint32_t v1 = vertex_offset + mesh->vertex_indices.data[c1];
+                uint32_t v2 = vertex_offset + mesh->vertex_indices.data[c2];
+
+                indices.push_back(v0);
+                indices.push_back(v1);
+                indices.push_back(v2);
+            }
+        }
+    };
+
+    // Process nodes with attached meshes
+    for (size_t ni = 0; ni < scene->nodes.count; ++ni) {
+        ufbx_node *node = scene->nodes.data[ni];
+        if (node && node->mesh) {
+            process_mesh(node->mesh, node->geometry_to_world);
+        }
+    }
+
+    // Fallback: If no node had a mesh, check unparented meshes directly
+    if (positions.empty() && scene->meshes.count > 0) {
+        for (size_t mi = 0; mi < scene->meshes.count; ++mi) {
+            process_mesh(scene->meshes.data[mi], ufbx_identity_matrix);
+        }
+    }
+
+    ufbx_free_scene(scene);
+
+    if (positions.empty() || indices.empty()) {
+        throw std::runtime_error("FBX file \"" + filename + "\" contains no mesh geometry!");
+    }
+
+    F.resize(3, indices.size() / 3);
+    memcpy(F.data(), indices.data(), sizeof(uint32_t) * indices.size());
+
+    V.resize(3, positions.size());
+    for (uint32_t i = 0; i < positions.size(); ++i) {
+        V.col(i) = positions[i];
+    }
+
+    N.resize(0, 0);
 
     cout << "done. (V=" << V.cols() << ", F=" << F.cols() << ", took "
          << timeString(timer.value()) << ")" << endl;

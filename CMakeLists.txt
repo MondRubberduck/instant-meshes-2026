@@ -56,6 +56,7 @@ set(CORE_INCLUDES
   ${CMAKE_CURRENT_SOURCE_DIR}/ext/pss
   ${CMAKE_CURRENT_SOURCE_DIR}/ext/pcg32
   ${CMAKE_CURRENT_SOURCE_DIR}/ext/rply
+  ${CMAKE_CURRENT_SOURCE_DIR}/ext/ufbx
   ${CMAKE_CURRENT_SOURCE_DIR}/ext/half
 )
 
@@ -86,6 +87,7 @@ set(CORE_SOURCES
   src/cleanup.h src/cleanup.cpp
   src/dedge.h src/dedge.cpp
   ext/rply/rply.c
+  ext/ufbx/ufbx.c
 )
 
 add_library(retopo_core STATIC ${CORE_SOURCES})
@@ -93,7 +95,7 @@ target_include_directories(retopo_core PUBLIC ${CORE_INCLUDES})
 target_link_libraries(retopo_core PUBLIC tbb_static)
 
 if(MSVC)
-  set_source_files_properties(ext/rply/rply.c PROPERTIES COMPILE_FLAGS "/wd4127")
+  set_source_files_properties(ext/rply/rply.c ext/ufbx/ufbx.c PROPERTIES COMPILE_FLAGS "/wd4127 /wd4244 /wd4701")
 endif()
 
 # --- Target: InstantMeshesCLI (Command-line tool) ---

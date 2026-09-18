@@ -31,6 +31,7 @@ We express immense gratitude to **Wenzel Jakob** and the ETH Zurich Interactive 
 | **Python Bindings** | None | **Zero-copy C++ extension** (`pyretopo`) supporting NumPy arrays directly |
 | **Architecture** | Monolithic GUI executable | **Decoupled C++17 static library** (`retopo_core`) + headless CLI |
 | **Mesh Conditioning** | Uniform graph Laplacians (sensitive to skinny tris) | **Clamped intrinsic cotangent Laplacian** $[\epsilon, 100.0]$ |
+| **File Formats** | Legacy `.obj`, `.ply`, `.aln` only | **Native Autodesk FBX** (`.fbx` binary & ASCII via `ufbx`), `.obj`, `.ply`, `.aln` |
 | **Feature Curves** | Edge shrinking during smoothing | **1D tangential curve relaxation** preserving sharp silhouettes and guide loops |
 | **Extraction Sanitization**| Basic edge collapsing (often produced pinch vertices) | **BSD-native topological untangling** (chord relaxation, 2-manifold disk splitting) |
 | **Quality Verification** | None (visual inspection only) | **Automated Quality Gates** reporting Quad Purity %, Valence Regularity %, and Scaled Jacobian |
@@ -59,18 +60,28 @@ result = pyretopo.retopologize(
     mirror_symmetry=True  # Bilateral mirror symmetry
 )
 
+# Or load directly from an FBX, OBJ, or PLY file:
+engine = pyretopo.RetopoEngine()
+engine.load_file("character.fbx")
+settings = pyretopo.RetopoSettings()
+settings.target_face_count = 2500
+result = engine.execute(settings)
+
 print(f"Generated {result.faces.shape[0]} quads in {result.elapsed_time_ms:.1f}ms")
 print(result.quality_report.summary())
 ```
 
 #### 3. Command Line Interface (CLI)
 ```bash
-# Remesh to exact 1,200 quads with intrinsic cotangent smoothing
+# Remesh an FBX model directly to 2,500 quads:
+InstantMeshesCLI -f 2500 -i -o output.obj character.fbx
+
+# Remesh an OBJ to exact 1,200 quads with intrinsic cotangent smoothing:
 InstantMeshesCLI -f 1200 -i -o output.obj input.obj
 ```
 
 #### 4. Standalone Desktop GUI
-Run `Launch_Instant_Meshes.bat` or open `Instant Meshes.exe` to use the interactive flow-brush and contour sketching interface.
+Run `Launch_Instant_Meshes.bat` or open `Instant Meshes.exe` to use the interactive flow-brush and contour sketching interface. Directly open `.fbx`, `.obj`, or `.ply` models.
 
 ---
 

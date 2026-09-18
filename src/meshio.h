@@ -27,6 +27,15 @@ extern void load_ply(const std::string &filename, MatrixXu &F, MatrixXf &V,
                      MatrixXf &N, bool pointcloud = false,
                      const ProgressCallback &progress = ProgressCallback());
 
+extern void load_fbx(const std::string &filename, MatrixXu &F, MatrixXf &V,
+                     MatrixXf &N, const ProgressCallback &progress = ProgressCallback());
+
+inline void load_fbx(const std::string &filename, MatrixXu &F, MatrixXf &V,
+                     const ProgressCallback &progress = ProgressCallback()) {
+    MatrixXf N;
+    load_fbx(filename, F, V, N, progress);
+}
+
 extern void
 load_pointcloud(const std::string &filename, MatrixXf &V, MatrixXf &N,
                 const ProgressCallback &progress = ProgressCallback());
