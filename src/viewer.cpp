@@ -57,86 +57,91 @@ Viewer::Viewer(bool fullscreen, bool deterministic)
     cout << "Compiling shaders .. ";
     cout.flush();
 
+    auto load_str = [](const uint8_t *data, uint32_t size) -> std::string {
+        if (!data || size == 0) return std::string();
+        return std::string((const char *)data, size);
+    };
+
     /* Initialize shaders for rendering geometry and fields */
     mMeshShader63.define("ROSY", "6");
     mMeshShader63.define("POSY", "3");
     mMeshShader63.init("mesh_shader_63",
-        (const char *)shader_mesh_vert,
-        (const char *)shader_mesh_frag,
-        (const char *)shader_mesh_geo);
+        load_str(shader_mesh_vert, shader_mesh_vert_size),
+        load_str(shader_mesh_frag, shader_mesh_frag_size),
+        load_str(shader_mesh_geo, shader_mesh_geo_size));
 
     mMeshShader24.define("ROSY", "2");
     mMeshShader24.define("POSY", "4");
     mMeshShader24.init("mesh_shader_24",
-        (const char *)shader_mesh_vert,
-        (const char *)shader_mesh_frag,
-        (const char *)shader_mesh_geo);
+        load_str(shader_mesh_vert, shader_mesh_vert_size),
+        load_str(shader_mesh_frag, shader_mesh_frag_size),
+        load_str(shader_mesh_geo, shader_mesh_geo_size));
 
     mMeshShader44.define("ROSY", "4");
     mMeshShader44.define("POSY", "4");
     mMeshShader44.init("mesh_shader_44",
-        (const char *)shader_mesh_vert,
-        (const char *)shader_mesh_frag,
-        (const char *)shader_mesh_geo);
+        load_str(shader_mesh_vert, shader_mesh_vert_size),
+        load_str(shader_mesh_frag, shader_mesh_frag_size),
+        load_str(shader_mesh_geo, shader_mesh_geo_size));
 
     mPointShader63.define("ROSY", "6");
     mPointShader63.define("POSY", "3");
     mPointShader63.define("POINT_MODE", "1");
     mPointShader63.init("point_shader_63",
-        (const char *)shader_point_vert,
-        (const char *)shader_mesh_frag,
-        (const char *)shader_point_geo);
+        load_str(shader_point_vert, shader_point_vert_size),
+        load_str(shader_mesh_frag, shader_mesh_frag_size),
+        load_str(shader_point_geo, shader_point_geo_size));
 
     mPointShader24.define("ROSY", "2");
     mPointShader24.define("POSY", "4");
     mPointShader24.define("POINT_MODE", "1");
     mPointShader24.init("point_shader_24",
-        (const char *)shader_point_vert,
-        (const char *)shader_mesh_frag,
-        (const char *)shader_point_geo);
+        load_str(shader_point_vert, shader_point_vert_size),
+        load_str(shader_mesh_frag, shader_mesh_frag_size),
+        load_str(shader_point_geo, shader_point_geo_size));
 
     mPointShader44.define("ROSY", "4");
     mPointShader44.define("POSY", "4");
     mPointShader44.define("POINT_MODE", "1");
     mPointShader44.init("point_shader_44",
-        (const char *)shader_point_vert,
-        (const char *)shader_mesh_frag,
-        (const char *)shader_point_geo);
+        load_str(shader_point_vert, shader_point_vert_size),
+        load_str(shader_mesh_frag, shader_mesh_frag_size),
+        load_str(shader_point_geo, shader_point_geo_size));
 
     mOrientationFieldShader.init("orientation_field_shader",
-        (const char *)shader_orientation_field_vert,
-        (const char *)shader_orientation_field_frag,
-        (const char *)shader_orientation_field_geo);
+        load_str(shader_orientation_field_vert, shader_orientation_field_vert_size),
+        load_str(shader_orientation_field_frag, shader_orientation_field_frag_size),
+        load_str(shader_orientation_field_geo, shader_orientation_field_geo_size));
 
     mPositionFieldShader.init("position_field_shader",
-        (const char *)shader_position_field_vert,
-        (const char *)shader_position_field_frag);
+        load_str(shader_position_field_vert, shader_position_field_vert_size),
+        load_str(shader_position_field_frag, shader_position_field_frag_size));
 
     mPositionSingularityShader.init("position_singularity_shader",
-        (const char *)shader_singularity_vert,
-        (const char *)shader_singularity_frag,
-        (const char *)shader_singularity_geo);
+        load_str(shader_singularity_vert, shader_singularity_vert_size),
+        load_str(shader_singularity_frag, shader_singularity_frag_size),
+        load_str(shader_singularity_geo, shader_singularity_geo_size));
 
     mOrientationSingularityShader.init("orientation_singularity_shader",
-        (const char *)shader_singularity_vert,
-        (const char *)shader_singularity_frag,
-        (const char *)shader_singularity_geo);
+        load_str(shader_singularity_vert, shader_singularity_vert_size),
+        load_str(shader_singularity_frag, shader_singularity_frag_size),
+        load_str(shader_singularity_geo, shader_singularity_geo_size));
 
     mFlowLineShader.init("flowline_shader",
-        (const char *)shader_flowline_vert,
-        (const char *)shader_flowline_frag);
+        load_str(shader_flowline_vert, shader_flowline_vert_size),
+        load_str(shader_flowline_frag, shader_flowline_frag_size));
 
     mStrokeShader.init("stroke_shader",
-        (const char *)shader_flowline_vert,
-        (const char *)shader_flowline_frag);
+        load_str(shader_flowline_vert, shader_flowline_vert_size),
+        load_str(shader_flowline_frag, shader_flowline_frag_size));
 
     mOutputMeshShader.init("output_mesh_shader",
-        (const char *)shader_quadmesh_vert,
-        (const char *)shader_quadmesh_frag);
+        load_str(shader_quadmesh_vert, shader_quadmesh_vert_size),
+        load_str(shader_quadmesh_frag, shader_quadmesh_frag_size));
 
     mOutputMeshWireframeShader.init("output_mesh_wireframe_shader",
-        (const char *)shader_lines_vert,
-        (const char *)shader_lines_frag);
+        load_str(shader_lines_vert, shader_lines_vert_size),
+        load_str(shader_lines_frag, shader_lines_frag_size));
 
     cout << "done. (took " << timeString(timer.value()) << ")" << endl;
 

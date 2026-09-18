@@ -24,7 +24,6 @@ out/
 # CMake temporary files
 CMakeFiles/
 CMakeCache.txt
-*.cmake
 Makefile
 CMakeLists.txt.user
 rules.ninja
