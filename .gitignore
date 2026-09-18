@@ -1,0 +1,63 @@
+# Build outputs and intermediate files
+build/
+build_gui/
+build_py/
+InstantMeshes_App/
+ext_build/
+Release/
+Debug/
+x64/
+out/
+
+# Visual Studio & IDE files
+.vs/
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+*.filters
+*.sdf
+*.sln
+*.suo
+*.user
+.vscode/
+
+# CMake temporary files
+CMakeFiles/
+CMakeCache.txt
+*.cmake
+Makefile
+CMakeLists.txt.user
+rules.ninja
+build.ninja
+.ninja_deps
+.ninja_log
+
+# Compiled libraries and symbols
+*.lib
+*.exp
+*.pdb
+*.ilk
+*.idb
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd.manifest
+
+# OS generated files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Generated test outputs
+test_output*.obj
+torus_retopo*.obj
+torus_test*.obj
+
+# Legacy artifact generation
+Instant Meshes.app
+resources.cpp
+resources.h
+im
+datasets/

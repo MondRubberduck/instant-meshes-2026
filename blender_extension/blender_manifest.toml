@@ -1,0 +1,14 @@
+﻿schema_version = "1.0.0"
+
+id = "instant_meshes_retopo"
+version = "2.1.0"
+name = "Instant Meshes Modern Retopology"
+tagline = "Field-aligned quad retopology with exact polycount budget and contour flow guidance"
+maintainer = "Antigravity"
+type = "add-on"
+
+tags = ["Mesh", "Modeling"]
+blender_version_min = "4.2.0"
+license = [
+  "SPDX:BSD-3-Clause",
+]
