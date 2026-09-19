@@ -213,7 +213,7 @@ MeshQualityReport MeshQualityReporter::analyze(const MatrixXu &F, const MatrixXf
 std::string MeshQualityReport::to_string() const {
     std::ostringstream oss;
     oss << "\n+============================================================+\n";
-    oss << "|            Instant Meshes 2.0 Quality Report              |\n";
+    oss << "|           Instant Meshes 2026 Quality Report            |\n";
     oss << "+============================================================+\n";
     oss << "| Topo Purity:       " << std::fixed << std::setprecision(1)
         << quad_ratio << "% Quads (" << quad_faces << " quads, " << tri_faces << " tris)\n";

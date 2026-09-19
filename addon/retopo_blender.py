@@ -1,10 +1,10 @@
 bl_info = {
-    "name": "Instant Meshes Modern Retopology",
-    "author": "Antigravity / Modernized Instant Meshes",
-    "version": (2, 0, 0),
+    "name": "InstantMeshes2026 Retopology",
+    "author": "Antigravity / Instant Meshes 2026 Team (original by Jakob et al.)",
+    "version": (2026, 1, 0),
     "blender": (3, 0, 0),
     "location": "View3D > Sidebar > Retopo",
-    "description": "Modernized field-aligned quad retopology with adaptive density and contour flow guidance",
+    "description": "InstantMeshes 2026 field-aligned quad retopology with adaptive density and contour flow guidance",
     "category": "Mesh",
 }
 
@@ -133,8 +133,8 @@ class RETOPO_OT_clear_guides(bpy.types.Operator):
 
 class RETOPO_OT_retopologize(bpy.types.Operator):
     bl_idname = "mesh.instant_retopo_execute"
-    bl_label = "Retopologize Active Mesh"
-    bl_description = "Execute modernized quad retopology with contour flow constraints"
+    bl_label = "Remesh with InstantMeshes 2026"
+    bl_description = "Execute InstantMeshes 2026 quad retopology with contour flow constraints"
     bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
@@ -145,7 +145,7 @@ class RETOPO_OT_retopologize(bpy.types.Operator):
         obj = context.active_object
         props = context.scene.retopo_props
 
-        self.report({'INFO'}, f"Starting modern retopology on {obj.name} (Target: {props.target_faces} faces)...")
+        self.report({'INFO'}, f"Starting InstantMeshes 2026 retopology on {obj.name} (Target: {props.target_faces} faces)...")
 
         # 1. Extract evaluated triangulated mesh data
         depsgraph = context.evaluated_depsgraph_get()
@@ -276,7 +276,7 @@ class RETOPO_OT_retopologize(bpy.types.Operator):
             out_faces = result.faces
         else:
             # Fallback to CLI executable
-            self.report({'WARNING'}, "pyretopo C-extension not loaded in Blender. Falling back to InstantMeshesCLI executable...")
+            self.report({'WARNING'}, "pyretopo C-extension not loaded in Blender. Falling back to InstantMeshes2026CLI executable...")
             with tempfile.TemporaryDirectory() as tmpdir:
                 in_path = os.path.join(tmpdir, "input.obj")
                 out_path = os.path.join(tmpdir, "output.obj")
@@ -289,15 +289,20 @@ class RETOPO_OT_retopologize(bpy.types.Operator):
                     for p in faces:
                         f.write(f"f {p[0]+1} {p[1]+1} {p[2]+1}\n")
 
-                cli_name = "InstantMeshesCLI.exe" if sys.platform == "win32" else "InstantMeshesCLI"
-                local_cli = os.path.join(os.path.dirname(os.path.abspath(__file__)), cli_name)
-                app_cli = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "InstantMeshes_App", cli_name)
-                
-                cmd_exe = "InstantMeshesCLI"
-                if os.path.exists(local_cli):
-                    cmd_exe = local_cli
-                elif os.path.exists(app_cli):
-                    cmd_exe = app_cli
+                cli_candidates = [
+                    "InstantMeshes2026CLI.exe" if sys.platform == "win32" else "InstantMeshes2026CLI",
+                    "InstantMeshesCLI.exe" if sys.platform == "win32" else "InstantMeshesCLI",
+                ]
+                cmd_exe = "InstantMeshes2026CLI"
+                for cli_name in cli_candidates:
+                    local_cli = os.path.join(os.path.dirname(os.path.abspath(__file__)), cli_name)
+                    app_cli = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "InstantMeshes_App", cli_name)
+                    if os.path.exists(local_cli):
+                        cmd_exe = local_cli
+                        break
+                    elif os.path.exists(app_cli):
+                        cmd_exe = app_cli
+                        break
 
                 cmd = [
                     cmd_exe,
@@ -362,7 +367,7 @@ class VIEW3D_PT_retopo_panel(bpy.types.Panel):
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = 'Retopo'
-    bl_label = 'Modern Instant Meshes'
+    bl_label = 'InstantMeshes 2026'
 
     def draw(self, context):
         layout = self.layout

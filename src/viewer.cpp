@@ -34,7 +34,7 @@
 #endif
 
 Viewer::Viewer(bool fullscreen, bool deterministic)
-    : Screen(Vector2i(1280, 960), "Instant Meshes", true, fullscreen),
+    : Screen(Vector2i(1280, 960), "Instant Meshes 2026", true, fullscreen),
       mOptimizer(mRes, true), mBVH(nullptr) {
     resizeEvent(mSize);
     mCreaseAngle = -1;
@@ -156,7 +156,7 @@ Viewer::Viewer(bool fullscreen, bool deterministic)
                           std::make_pair(nvgImageIcon(ctx, loadmesh), ""));
 
     /* Initialize user interface */
-    Window *window = new Window(this, "Instant Meshes");
+    Window *window = new Window(this, "Instant Meshes 2026");
     window->setPosition(Vector2i(15, 15));
     window->setLayout(new GroupLayout());
     window->setId("viewer");
@@ -659,15 +659,15 @@ Viewer::Viewer(bool fullscreen, bool deterministic)
     Button *about = new Button(window->buttonPanel(), "", ENTYPO_ICON_INFO);
     about->setCallback([&,ctx]() {
         auto dlg = new MessageDialog(
-            this, MessageDialog::Type::Information, "About Instant Meshes",
-            "Instant Meshes is freely available under a BSD-style license. "
-            "If you use the meshes obtained with this software, we kindly "
-            "request that you acknowledge this and link to the project page at\n\n"
-            "\thttp://igl.ethz.ch/projects/instant-meshes/\n\n"
-            "In the context of scientific articles or books, please cite paper\n\n"
-            "Instant Field-Aligned Meshes\n"
+            this, MessageDialog::Type::Information, "About InstantMeshes 2026",
+            "InstantMeshes 2026 is a modernized fork of Instant Meshes,\n"
+            "freely available under the BSD-3-Clause license.\n\n"
+            "Original Research & Algorithm:\n"
+            "Instant Field-Aligned Meshes (SIGGRAPH Asia 2015)\n"
             "Wenzel Jakob, Marco Tarini, Daniele Panozzo, Olga Sorkine-Hornung\n"
-            "In ACM Transactions on Graphics (Proceedings of SIGGRAPH Asia 2015)\n");
+            "\thttp://igl.ethz.ch/projects/instant-meshes/\n\n"
+            "InstantMeshes 2026 Repository:\n"
+            "\thttps://github.com/MondRubberduck/instant-meshes-2026.git\n");
         dlg->messageLabel()->setFixedWidth(550);
         dlg->messageLabel()->setFontSize(20);
         performLayout(ctx);

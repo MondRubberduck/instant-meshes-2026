@@ -74,14 +74,14 @@ print(result.quality_report.summary())
 #### 3. Command Line Interface (CLI)
 ```bash
 # Remesh an FBX model directly to 2,500 quads:
-InstantMeshesCLI -f 2500 -i -o output.obj character.fbx
+InstantMeshes2026CLI -f 2500 -i -o output.obj character.fbx
 
 # Remesh an OBJ to exact 1,200 quads with intrinsic cotangent smoothing:
-InstantMeshesCLI -f 1200 -i -o output.obj input.obj
+InstantMeshes2026CLI -f 1200 -i -o output.obj input.obj
 ```
 
 #### 4. Standalone Desktop GUI
-Run `Launch_Instant_Meshes.bat` or open `Instant Meshes.exe` to use the interactive flow-brush and contour sketching interface. Directly open `.fbx`, `.obj`, or `.ply` models.
+Run `Launch_Instant_Meshes_2026.bat` or open `InstantMeshes2026.exe` to use the interactive flow-brush and contour sketching interface. Directly open `.fbx`, `.obj`, or `.ply` models.
 
 ---
 

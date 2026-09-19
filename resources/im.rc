@@ -1,4 +1,4 @@
-﻿id ICON "im.ico"
+id ICON "im.ico"
 GLFW_ICON ICON "im.ico" 
 
 1 VERSIONINFO
@@ -9,14 +9,14 @@ BEGIN
   BEGIN
     BLOCK "080904E4"
     BEGIN
-      VALUE "CompanyName", "ETH Zurich"
-      VALUE "FileDescription", "Instant Meshes"
-      VALUE "FileVersion", "1.0"
-      VALUE "InternalName", "Instant Meshes"
-      VALUE "LegalCopyright", "Wenzel Jakob, Marco Tarini, Daniele Panozzo, Olga Sorkine-Hornung"
-      VALUE "OriginalFilename", "Instant Meshes.exe"
-      VALUE "ProductName", "Instant Meshes"
-      VALUE "ProductVersion", "1.0"
+      VALUE "CompanyName", "Instant Meshes 2026 Contributors"
+      VALUE "FileDescription", "InstantMeshes 2026 - Modernized Quad Retopology"
+      VALUE "FileVersion", "2026.1"
+      VALUE "InternalName", "InstantMeshes2026"
+      VALUE "LegalCopyright", "Original (c) 2015 Wenzel Jakob et al. Modernization (c) 2026 Antigravity."
+      VALUE "OriginalFilename", "InstantMeshes2026.exe"
+      VALUE "ProductName", "InstantMeshes 2026"
+      VALUE "ProductVersion", "2026.1"
     END
   END
 

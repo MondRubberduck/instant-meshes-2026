@@ -68,7 +68,7 @@ void batch_process(const std::string &input, const std::string &output,
                    bool pure_quad, bool deterministic,
                    Float adaptivity, const std::string &contour_file) {
     cout << endl;
-    cout << "Running modernized batch mode:" << endl;
+    cout << "Running Instant Meshes 2026 batch mode:" << endl;
     cout << "   Input file             = " << input << endl;
     cout << "   Output file            = " << output << endl;
     cout << "   Rotation symmetry type = " << rosy << endl;

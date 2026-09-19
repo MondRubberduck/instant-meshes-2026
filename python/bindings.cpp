@@ -15,7 +15,7 @@ namespace py = pybind11;
 int nprocs = -1;
 
 PYBIND11_MODULE(pyretopo, m) {
-    m.doc() = "Modernized Instant Meshes Headless Retopology Engine for Python and Blender";
+    m.doc() = "InstantMeshes2026 Headless Retopology Engine (pyretopo)";
 
     py::class_<GuideContour>(m, "GuideContour")
         .def(py::init<>())

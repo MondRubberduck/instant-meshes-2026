@@ -159,6 +159,8 @@ int main(int argc, char **argv) {
     }
 
     if (args.size() > 1 || help || (!batchOutput.empty() && args.size() == 0)) {
+        cout << "Instant Meshes 2026 (InstantMeshes2026CLI)" << endl;
+        cout << "Modernized quad retopology based on Jakob et al. (SIGGRAPH Asia 2015)" << endl << endl;
         cout << "Syntax: " << argv[0] << " [options] <input mesh / point cloud / application state snapshot>" << endl;
         cout << "Options:" << endl;
         cout << "   -o, --output <output>     Writes to the specified PLY/OBJ output file in batch mode" << endl;
@@ -184,7 +186,7 @@ int main(int argc, char **argv) {
     }
 
     if (args.size() == 0)
-        cout << "Running in GUI mode, start with -h for instructions on batch mode." << endl;
+        cout << "Instant Meshes 2026: Running in GUI mode, start with -h for instructions on batch mode." << endl;
 
     tbb::task_scheduler_init init(nprocs == -1 ? tbb::task_scheduler_init::automatic : nprocs);
 
@@ -239,7 +241,7 @@ int main(int argc, char **argv) {
         return -1;
     }
 #else
-    cout << "InstantMeshesCLI was built in headless mode without GUI support." << endl;
+    cout << "InstantMeshes2026CLI was built in headless mode without GUI support." << endl;
     cout << "Use -h for available options or provide an input mesh with -o <output> to run retopology." << endl;
 #endif
 

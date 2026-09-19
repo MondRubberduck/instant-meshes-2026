@@ -32,7 +32,9 @@ bool Serializer::isSerializedFile(const std::string &filename) {
     bool is_serialized = false;
     const char *comment = nullptr;
     while ((comment = ply_get_next_comment(ply, comment))) {
-        if (strcmp(comment, "Instant Meshes Application State") == 0)
+        if (strcmp(comment, "Instant Meshes Application State") == 0 ||
+            strcmp(comment, "Instant Meshes 2026 Application State") == 0 ||
+            strcmp(comment, "InstantMeshes2026 Application State") == 0)
             is_serialized = true;
     }
     ply_close(ply);
@@ -242,7 +244,7 @@ void Serializer::write(const std::string &filename, const ProgressCallback &prog
     if (!ply)
         throw std::runtime_error("Unable to write PLY file!");
 
-    ply_add_comment(ply, "Instant Meshes Application State");
+    ply_add_comment(ply, "Instant Meshes 2026 Application State");
 
     for (auto const &kv : mData) {
         #define IMPLEMENT(ply_type, type) \

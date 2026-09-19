@@ -106,7 +106,7 @@ add_executable(InstantMeshesCLI
 )
 target_link_libraries(InstantMeshesCLI PRIVATE retopo_core)
 target_include_directories(InstantMeshesCLI PRIVATE ${CORE_INCLUDES})
-set_target_properties(InstantMeshesCLI PROPERTIES OUTPUT_NAME "InstantMeshesCLI")
+set_target_properties(InstantMeshesCLI PROPERTIES OUTPUT_NAME "InstantMeshes2026CLI")
 
 # --- Target: GUI Application (NanoGUI) ---
 
@@ -175,7 +175,7 @@ if(INSTANT_MESHES_BUILD_GUI AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/ext/nanogui/
   )
   add_definitions(${NANOGUI_EXTRA_DEFS})
   target_link_libraries(InstantMeshes PRIVATE retopo_core nanogui ${NANOGUI_EXTRA_LIBS})
-  set_target_properties(InstantMeshes PROPERTIES OUTPUT_NAME "Instant Meshes")
+  set_target_properties(InstantMeshes PROPERTIES OUTPUT_NAME "InstantMeshes2026")
 endif()
 
 # --- Target: Python Module (pybind11) ---

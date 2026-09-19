@@ -62,3 +62,6 @@ resources.cpp
 resources.h
 im
 datasets/
+scratch/
+*.mp4
+temp_raw*.mp4

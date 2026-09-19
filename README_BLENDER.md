@@ -1,6 +1,6 @@
-# Modern Instant Meshes - Blender Plugin & Python API
+# InstantMeshes 2026 - Blender Plugin & Python API
 
-This document describes how to use the modernized Instant Meshes retopology engine directly inside **Blender (3.x and 4.x)** with interactive topology flow control and target poly counts.
+This document describes how to use the InstantMeshes 2026 retopology engine directly inside **Blender (3.x, 4.x, and 5.x LTS)** with interactive topology flow control and target poly counts.
 
 ---
 
@@ -38,11 +38,11 @@ This document describes how to use the modernized Instant Meshes retopology engi
    - E.g., `C:\Program Files\Blender Foundation\Blender 4.2\4.2\python\lib\site-packages\`
 3. Install the add-on:
    - In Blender, open `Preferences > Add-ons > Install...`
-   - Select `addon/retopo_blender.py` and enable **Instant Meshes Modern Retopology**.
+   - Select `addon/retopo_blender.py` and enable **InstantMeshes2026 Retopology**.
 
 ### Option 2: Using the Headless CLI Fallback
 
-If you haven't compiled the Python extension, the add-on automatically falls back to invoking `InstantMeshesCLI.exe` in the background via temporary files. Ensure `InstantMeshesCLI.exe` is placed in your system `PATH`.
+If you haven't compiled the Python extension, the add-on automatically falls back to invoking `InstantMeshes2026CLI.exe` in the background via temporary files. Ensure `InstantMeshes2026CLI.exe` is placed in your system `PATH`.
 
 ---
 

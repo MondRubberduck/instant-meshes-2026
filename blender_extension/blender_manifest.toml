@@ -1,10 +1,10 @@
-﻿schema_version = "1.0.0"
+schema_version = "1.0.0"
 
-id = "instant_meshes_retopo"
-version = "2.1.0"
-name = "Instant Meshes Modern Retopology"
-tagline = "Field-aligned quad retopology with exact polycount budget and contour flow guidance"
-maintainer = "Antigravity"
+id = "instant_meshes_2026"
+version = "2026.1.0"
+name = "InstantMeshes2026 Retopology"
+tagline = "Instant Meshes 2026 fast field-aligned quad retopology with exact polycount budget and contour flow guidance"
+maintainer = "Instant Meshes 2026 Contributors"
 type = "add-on"
 
 tags = ["Mesh", "Modeling"]
