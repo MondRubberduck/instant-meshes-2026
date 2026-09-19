@@ -4,6 +4,8 @@
 [![C++17](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://isocpp.org/)
 [![Python](https://img.shields.io/badge/Python-3.13-green.svg)](https://python.org)
 [![Blender](https://img.shields.io/badge/Blender-4.2%20%7C%205.x%20LTS-orange.svg)](https://blender.org)
+[![Donate with PayPal](https://img.shields.io/badge/Donate-PayPal-00457C?logo=paypal&logoColor=white)](https://www.paypal.com/donate/?hosted_button_id=5XKG8WLLRWZ44)
+[![Support on Patreon](https://img.shields.io/badge/Support-Patreon-FF424D?logo=patreon&logoColor=white)](https://www.patreon.com/NGallist)
 
 **Instant Meshes 2026** is a modernized, production-hardened fork of the seminal field-aligned retopology software. It transforms the original algorithm into a decoupled C++17 library, native Python 3.13 extension (`pyretopo`), and a high-performance in-memory Blender 5.x extension.
 
@@ -95,6 +97,15 @@ cd instant-meshes-2026
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release -j
 ```
+
+---
+
+### Support & Donations
+
+If you find **Instant Meshes 2026** useful for your 3D workflow or pipeline, you can support ongoing maintenance and development:
+
+* [![Donate with PayPal](https://img.shields.io/badge/Donate-PayPal-00457C?logo=paypal&logoColor=white)](https://www.paypal.com/donate/?hosted_button_id=5XKG8WLLRWZ44) &nbsp; [Donate via PayPal](https://www.paypal.com/donate/?hosted_button_id=5XKG8WLLRWZ44)
+* [![Support on Patreon](https://img.shields.io/badge/Support-Patreon-FF424D?logo=patreon&logoColor=white)](https://www.patreon.com/NGallist) &nbsp; [Support on Patreon](https://www.patreon.com/NGallist)
 
 ---
 
