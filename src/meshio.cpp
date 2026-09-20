@@ -51,12 +51,27 @@ void write_mesh(const std::string &filename, const MatrixXu &F,
     if (filename.size() > 4)
         extension = str_tolower(filename.substr(filename.size()-4));
 
-    if (extension == ".ply")
+    if (extension == ".ply") {
         write_ply(filename, F, V, N, Nf, UV, C, progress);
-    else if (extension == ".obj")
+        return;
+    }
+    if (extension == ".obj") {
         write_obj(filename, F, V, N, Nf, UV, C, progress);
-    else
-        throw std::runtime_error("write_mesh: Unknown file extension \"" + extension + "\" (.ply/.obj are supported)");
+        return;
+    }
+
+    /* Does the name carry any extension at all? ("ExportedMesh" vs "mesh.fbx") */
+    size_t slash = filename.find_last_of("/\\");
+    size_t dot = filename.find_last_of('.');
+    bool has_extension = (dot != std::string::npos &&
+                          (slash == std::string::npos || dot > slash));
+
+    if (has_extension)
+        throw std::runtime_error("write_mesh: \"" + filename + "\" cannot be exported: only .obj and "
+            ".ply are supported for writing (FBX files can be imported but not exported)");
+
+    /* No extension typed (e.g. "ExportedMesh" in the save dialog): default to OBJ */
+    write_obj(filename + ".obj", F, V, N, Nf, UV, C, progress);
 }
 
 void load_ply(const std::string &filename, MatrixXu &F, MatrixXf &V,

@@ -33,7 +33,7 @@ We express immense gratitude to **Wenzel Jakob** and the ETH Zurich Interactive 
 | **Python Bindings** | None | **Zero-copy C++ extension** (`pyretopo`) supporting NumPy arrays directly |
 | **Architecture** | Monolithic GUI executable | **Decoupled C++17 static library** (`retopo_core`) + headless CLI |
 | **Mesh Conditioning** | Uniform graph Laplacians (sensitive to skinny tris) | **Clamped intrinsic cotangent Laplacian** $[\epsilon, 100.0]$ |
-| **File Formats** | Legacy `.obj`, `.ply`, `.aln` only | **Native Autodesk FBX** (`.fbx` binary & ASCII via `ufbx`), `.obj`, `.ply`, `.aln` |
+| **File Formats** | Legacy `.obj`, `.ply`, `.aln` only | **Native Autodesk FBX import** (`.fbx` binary & ASCII via `ufbx`), `.obj`, `.ply`, `.aln`; export to `.obj` / `.ply` |
 | **Feature Curves** | Edge shrinking during smoothing | **1D tangential curve relaxation** preserving sharp silhouettes and guide loops |
 | **Extraction Sanitization**| Basic edge collapsing (often produced pinch vertices) | **BSD-native topological untangling** (chord relaxation, 2-manifold disk splitting) |
 | **Quality Verification** | None (visual inspection only) | **Automated Quality Gates** reporting Quad Purity %, Valence Regularity %, and Scaled Jacobian |

@@ -77,3 +77,6 @@ temp_raw*.mp4
 !ext/pybind11_modern/tools/*.cmake
 !ext/tbb/build/
 !ext/tbb/build/version_string.ver.in
+/build313/
+/build313b/
+/bin_local/

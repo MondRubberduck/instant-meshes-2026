@@ -1,7 +1,7 @@
 bl_info = {
     "name": "InstantMeshes2026 Retopology",
     "author": "Antigravity / Instant Meshes 2026 Team (original by Jakob et al.)",
-    "version": (0, 3, 1),
+    "version": (0, 3, 2),
     "blender": (4, 2, 0),
     "location": "View3D > Sidebar > Retopo",
     "description": "InstantMeshes 2026 field-aligned quad retopology with adaptive density and contour flow guidance",
