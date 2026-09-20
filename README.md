@@ -43,13 +43,13 @@ We express immense gratitude to **Wenzel Jakob** and the ETH Zurich Interactive 
 ### Quick Start
 
 #### 1. Blender Extension (Blender 4.2+ & 5.x LTS)
-1. Download the extension zip from the [**Releases** page](../../releases) — it is built from this source code by GitHub Actions, and its SHA-256 checksum is published next to it in `SHA256SUMS.txt`. Pick the archive for your platform: `instant_meshes_retopo.zip` (Windows) or `instant_meshes_retopo_linux64.zip` (Linux).
+1. Download `InstantMeshes2026_AddOn.zip` from the [**Releases** page](../../releases) — it is built from this source code by GitHub Actions, and its SHA-256 checksum is published next to it in `SHA256SUMS.txt`. The zip contains the modules for Windows and Linux and both supported Python ABIs; Blender picks the matching one automatically.
 2. In Blender, navigate to **Edit → Preferences → Get Extensions**.
 3. Click the top-right menu icon and choose **Install from Disk...**.
-4. Select the extension zip you downloaded.
+4. Select `InstantMeshes2026_AddOn.zip`.
 5. Open the 3D Viewport sidebar (**N panel → Retopo**) to remesh any active object in real time.
 
-> **Python ABI note:** each extension zip ships `pyretopo` modules compiled for the Python versions bundled with the supported Blender releases (Blender 4.2–4.5 use Python 3.11, Blender 5.x use Python 3.13); Blender picks the matching one automatically. On builds whose ABI has no matching module, the add-on falls back to the bundled CLI executable. The CLI is also available standalone: `InstantMeshes2026CLI-win64.zip` / `InstantMeshes2026CLI-linux64.zip`.
+> **Python ABI note:** the Add-on ships `pyretopo` modules compiled for the Python versions bundled with the supported Blender releases (Blender 4.2–4.5 use Python 3.11, Blender 5.x use Python 3.13). On builds whose ABI has no matching module, the add-on falls back to the bundled CLI executable.
 
 #### 2. Python 3.13 Extension (`pyretopo`)
 ```python
@@ -85,8 +85,8 @@ InstantMeshes2026CLI -f 2500 -i -o output.obj character.fbx
 InstantMeshes2026CLI -f 1200 -i -o output.obj input.obj
 ```
 
-#### 4. Standalone Desktop GUI
-Run `Launch_Instant_Meshes_2026.bat` or open `InstantMeshes2026.exe` to use the interactive flow-brush and contour sketching interface. Directly open `.fbx`, `.obj`, or `.ply` models.
+#### 4. Standalone Desktop GUI (Windows & Linux)
+Download `InstantMeshes2026_Win64.zip` or `InstantMeshes2026_Linux64.zip` from the [Releases](../../releases) page, unzip, and double-click **`InstantMeshes2026`** to use the interactive flow-brush and contour sketching interface. Directly open `.fbx`, `.obj`, or `.ply` models. The zip also contains `InstantMeshes2026CLI` for batch/scripted use from a terminal (`-h` for options).
 
 ---
 

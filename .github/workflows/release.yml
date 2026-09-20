@@ -5,9 +5,12 @@ name: Release
 # binaries inside a source checkout are what gets "Download ZIP" archives
 # flagged by browsers and antivirus products.
 #
-# Windows and Linux build jobs each produce two pyretopo modules (Python 3.11
-# for Blender 4.2-4.5 and Python 3.13 for Blender 5.x); the release job merges
-# the per-platform archives and publishes everything with one checksum file.
+# Windows and Linux build jobs each build the GUI application, the CLI and
+# two pyretopo modules (Python 3.11 for Blender 4.2-4.5, 3.13 for 5.x).
+# The release job assembles the combined Blender Add-on zip and publishes:
+#   InstantMeshes2026_Win64.zip / InstantMeshes2026_Linux64.zip (app + CLI)
+#   InstantMeshes2026_AddOn.zip (Blender add-on, all platforms & ABIs)
+#   SHA256SUMS.txt
 on:
   push:
     tags: ["v*"]
@@ -32,6 +35,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install GUI dependencies (Linux)
+        if: matrix.platform == 'linux64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libx11-dev libxcursor-dev libxrandr-dev libxinerama-dev \
+            libxi-dev libxext-dev libxkbcommon-dev libgl1-mesa-dev libglu1-mesa-dev
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -49,13 +60,13 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Configure (Python 3.13 module for Blender 5.x + CLI)
+      - name: Configure (GUI app + CLI + Python 3.13 module)
         shell: bash
-        run: cmake -S . -B build -DINSTANT_MESHES_BUILD_GUI=OFF
+        run: cmake -S . -B build -DINSTANT_MESHES_BUILD_GUI=ON
         env:
           Python_ROOT: ${{ env.pythonLocation }}
 
-      - name: Build (Python 3.13)
+      - name: Build (GUI + CLI + Python 3.13)
         run: cmake --build build --config Release --parallel
 
       - name: Run Python integration tests
@@ -78,18 +89,39 @@ jobs:
           echo "$log" | grep -q "F=" || { echo "CLI produced no output file"; exit 1; }
           echo "$log" | grep -q "\[PASSED\]" || { echo "Quality gates did not pass"; exit 1; }
 
-      - name: Package ${{ matrix.platform }} archives
+      - name: Verify GUI executable exists
         shell: bash
         run: |
-          pyd311=$(find build311 -name 'pyretopo*.pyd' -o -name 'pyretopo*.so' | head -n 1)
-          if [ -z "$pyd311" ]; then echo "Python 3.11 pyretopo module not found"; exit 1; fi
-          python tools/package_release.py --platform ${{ matrix.platform }} \
-            --build-dir build --out-dir dist --extra-pyd "$pyd311"
+          gui=$(find build -type f \( -name 'InstantMeshes2026' -o -name 'InstantMeshes2026.exe' \) \
+                ! -path '*CMakeFiles*' ! -path '*.dir*' | head -n 1)
+          if [ -z "$gui" ]; then echo "GUI executable not found"; exit 1; fi
+          chmod +x "$gui"
+          echo "GUI binary: $gui ($(stat -c%s "$gui" 2>/dev/null || stat -f%z "$gui") bytes)"
+
+      - name: Package ${{ matrix.platform }} application zip
+        shell: bash
+        run: python tools/package_release.py --platform ${{ matrix.platform }} --build-dir build --out-dir dist
+
+      - name: Collect binaries for the Add-on zip
+        shell: bash
+        run: |
+          mkdir -p bin
+          find build build311 -type f \( -name 'pyretopo*.pyd' -o -name 'pyretopo*.so' \) \
+            ! -path '*CMakeFiles*' ! -path '*.dir*' -exec cp {} bin/ \;
+          cli=$(find build -type f \( -name 'InstantMeshes2026CLI' -o -name 'InstantMeshes2026CLI.exe' \) \
+                ! -path '*CMakeFiles*' ! -path '*.dir*' | head -n 1)
+          cp "$cli" bin/
 
       - uses: actions/upload-artifact@v4
         with:
-          name: release-${{ matrix.platform }}
+          name: app-${{ matrix.platform }}
           path: dist/*
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bin-${{ matrix.platform }}
+          path: bin/*
           if-no-files-found: error
 
   release:
@@ -102,14 +134,23 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: dist
-          pattern: release-*
+          pattern: app-*
           merge-multiple: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: bin
+          pattern: bin-*
+          merge-multiple: true
+
+      - name: Assemble Blender Add-on zip
+        run: python tools/package_release.py --addon --bin-dir bin --out-dir dist
 
       - name: Generate checksums
         run: python tools/package_release.py --checksums-only dist
 
       - name: List release files
-        run: ls -la dist/
+        run: ls -la dist/ bin/
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
