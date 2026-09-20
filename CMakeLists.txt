@@ -34,7 +34,7 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID MATCHES "G
   # headers, which breaks the vendored 2015-2020 era dependencies (TBB 2020,
   # old Eigen). Force-include it for C++ translation units.
   if (CMAKE_CXX_COMPILER_ID MATCHES "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 12)
-    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-include;cstdint>)
+    add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-include;cstdint>")
   endif()
 endif()
 
