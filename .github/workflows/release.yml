@@ -69,7 +69,8 @@ jobs:
       - name: CLI smoke test
         shell: bash
         run: |
-          cli=$(find build -name 'InstantMeshes2026CLI*' -type f ! -path '*CMakeFiles*' ! -name '*.dir*' | head -n 1)
+          cli=$(find build -type f \( -name 'InstantMeshes2026CLI' -o -name 'InstantMeshes2026CLI.exe' \) \
+                ! -path '*CMakeFiles*' ! -path '*.dir*' | head -n 1)
           if [ -z "$cli" ]; then echo "CLI executable not found"; exit 1; fi
           chmod +x "$cli"
           log=$("$cli" -f 500 -i -o test_output_ci.obj torus.obj 2>&1)
