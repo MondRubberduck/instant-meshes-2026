@@ -27,8 +27,14 @@ if(MSVC)
   endif()
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID MATCHES "GNU")
   add_compile_options(-Wall -Wextra -Wno-unused-parameter)
-  if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     add_compile_options(-Wno-gnu-anonymous-struct -Wno-c99-extensions -Wno-nested-anon-types)
+  endif()
+  # GCC 13+ no longer transitively includes <cstdint> from many libstdc++
+  # headers, which breaks the vendored 2015-2020 era dependencies (TBB 2020,
+  # old Eigen). Force-include it for C++ translation units.
+  if (CMAKE_CXX_COMPILER_ID MATCHES "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 12)
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-include;cstdint>)
   endif()
 endif()
 
