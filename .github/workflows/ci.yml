@@ -31,7 +31,21 @@ jobs:
           Python_ROOT: ${{ env.pythonLocation }}
 
       - name: Build
-        run: cmake --build build --config Release --parallel
+        shell: bash
+        run: |
+          cmake --build build --config Release --parallel 2>&1 | tee build.log
+          exit ${PIPESTATUS[0]}
+
+      - name: Publish build log on failure
+        if: failure()
+        shell: bash
+        run: |
+          {
+            echo '### Build failure — last 150 lines of build.log'
+            echo '```'
+            tail -n 150 build.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Install numpy
         run: python -m pip install numpy
