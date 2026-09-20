@@ -43,13 +43,13 @@ We express immense gratitude to **Wenzel Jakob** and the ETH Zurich Interactive 
 ### Quick Start
 
 #### 1. Blender Extension (Blender 4.2+ & 5.x LTS)
-1. Download `instant_meshes_retopo.zip` from the [**Releases** page](../../releases) — it is built from this source code by GitHub Actions, and its SHA-256 checksum is published next to it in `SHA256SUMS.txt`.
+1. Download the extension zip from the [**Releases** page](../../releases) — it is built from this source code by GitHub Actions, and its SHA-256 checksum is published next to it in `SHA256SUMS.txt`. Pick the archive for your platform: `instant_meshes_retopo.zip` (Windows) or `instant_meshes_retopo_linux64.zip` (Linux).
 2. In Blender, navigate to **Edit → Preferences → Get Extensions**.
 3. Click the top-right menu icon and choose **Install from Disk...**.
-4. Select `instant_meshes_retopo.zip`.
+4. Select the extension zip you downloaded.
 5. Open the 3D Viewport sidebar (**N panel → Retopo**) to remesh any active object in real time.
 
-> **Python ABI note:** the extension ships a `pyretopo` module compiled for the Python version bundled with your Blender (Blender 5.x uses Python 3.13). On builds whose ABI has no matching `.pyd`, the add-on automatically falls back to the bundled CLI executable.
+> **Python ABI note:** each extension zip ships `pyretopo` modules compiled for the Python versions bundled with the supported Blender releases (Blender 4.2–4.5 use Python 3.11, Blender 5.x use Python 3.13); Blender picks the matching one automatically. On builds whose ABI has no matching module, the add-on falls back to the bundled CLI executable. The CLI is also available standalone: `InstantMeshes2026CLI-win64.zip` / `InstantMeshes2026CLI-linux64.zip`.
 
 #### 2. Python 3.13 Extension (`pyretopo`)
 ```python

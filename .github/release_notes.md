@@ -1,8 +1,8 @@
 ## Download blocked or flagged by antivirus?
 
-This release contains **unsigned native binaries** (a `.exe` CLI and `.pyd`
-Python extension modules) built by [GitHub Actions from the public source
-code](https://github.com/MondRubberduck/instant-meshes-2026/actions/workflows/release.yml) — you can inspect every build step yourself.
+This release contains **unsigned native binaries** (CLI executables and Python
+extension modules for Windows and Linux) built by [GitHub Actions from the
+public source code](https://github.com/MondRubberduck/instant-meshes-2026/actions/workflows/release.yml) — you can inspect every build step yourself.
 
 Because the project is new and the files have low download prevalence,
 SmartScreen and some antivirus engines show heuristic false positives such as

@@ -5,9 +5,9 @@ name: Release
 # binaries inside a source checkout are what gets "Download ZIP" archives
 # flagged by browsers and antivirus products.
 #
-# Two pyretopo modules are produced: one for Python 3.13 (Blender 5.x) and
-# one for Python 3.11 (Blender 4.2-4.5). Both are bundled in the extension
-# zip; each Blender picks the ABI-matching one at import time.
+# Windows and Linux build jobs each produce two pyretopo modules (Python 3.11
+# for Blender 4.2-4.5 and Python 3.13 for Blender 5.x); the release job merges
+# the per-platform archives and publishes everything with one checksum file.
 on:
   push:
     tags: ["v*"]
@@ -17,8 +17,18 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    runs-on: windows-latest
+  build:
+    name: Build ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: win64
+            runner: windows-latest
+          - platform: linux64
+            runner: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -27,7 +37,7 @@ jobs:
           python-version: "3.11"
 
       - name: Configure (Python 3.11 module for Blender 4.2-4.5)
-        shell: pwsh
+        shell: bash
         run: cmake -S . -B build311 -DINSTANT_MESHES_BUILD_GUI=OFF
         env:
           Python_ROOT: ${{ env.pythonLocation }}
@@ -40,7 +50,7 @@ jobs:
           python-version: "3.13"
 
       - name: Configure (Python 3.13 module for Blender 5.x + CLI)
-        shell: pwsh
+        shell: bash
         run: cmake -S . -B build -DINSTANT_MESHES_BUILD_GUI=OFF
         env:
           Python_ROOT: ${{ env.pythonLocation }}
@@ -49,37 +59,67 @@ jobs:
         run: cmake --build build --config Release --parallel
 
       - name: Run Python integration tests
-        shell: pwsh
+        shell: bash
         run: |
           python -m pip install numpy
-          $mod = Get-ChildItem -Recurse -Path build -Include "pyretopo*.pyd" | Select-Object -First 1
-          if (-not $mod) { throw "pyretopo module not found" }
-          $env:PYTHONPATH = $mod.DirectoryName
-          python test_pyretopo.py
+          mod=$(find build -name 'pyretopo*.pyd' -o -name 'pyretopo*.so' | head -n 1)
+          if [ -z "$mod" ]; then echo "pyretopo module not found"; exit 1; fi
+          PYTHONPATH="$(dirname "$mod")" python test_pyretopo.py
 
-      - name: Package archives + checksums
-        shell: pwsh
+      - name: CLI smoke test
+        shell: bash
         run: |
-          $pyd311 = Get-ChildItem -Recurse -Path build311 -Include "pyretopo*.pyd" | Select-Object -First 1
-          if (-not $pyd311) { throw "Python 3.11 pyretopo module not found" }
-          python tools/package_release.py --build-dir build --out-dir dist --extra-pyd $pyd311.FullName
+          cli=$(find build -name 'InstantMeshes2026CLI*' -type f ! -path '*CMakeFiles*' ! -name '*.dir*' | head -n 1)
+          if [ -z "$cli" ]; then echo "CLI executable not found"; exit 1; fi
+          chmod +x "$cli"
+          log=$("$cli" -f 500 -i -o test_output_ci.obj torus.obj 2>&1)
+          echo "$log"
+          echo "$log" | grep -q "F=" || { echo "CLI produced no output file"; exit 1; }
+          echo "$log" | grep -q "\[PASSED\]" || { echo "Quality gates did not pass"; exit 1; }
+
+      - name: Package ${{ matrix.platform }} archives
+        shell: bash
+        run: |
+          pyd311=$(find build311 -name 'pyretopo*.pyd' -o -name 'pyretopo*.so' | head -n 1)
+          if [ -z "$pyd311" ]; then echo "Python 3.11 pyretopo module not found"; exit 1; fi
+          python tools/package_release.py --platform ${{ matrix.platform }} \
+            --build-dir build --out-dir dist --extra-pyd "$pyd311"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: release-files
+          name: release-${{ matrix.platform }}
           path: dist/*
           if-no-files-found: error
 
+  release:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: release-*
+          merge-multiple: true
+
+      - name: Generate checksums
+        run: python tools/package_release.py --checksums-only dist
+
+      - name: List release files
+        run: ls -la dist/
+
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
-        shell: pwsh
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $files = (Get-ChildItem dist -File).FullName
-          if (-not $files) { throw "No files found in dist/" }
-          gh release create ${{ github.ref_name }} `
-            --repo ${{ github.repository }} `
-            --title ${{ github.ref_name }} `
-            --notes-file .github/release_notes.md `
-            $files
+          mapfile -t files < <(find dist -type f | sort)
+          if [ ${#files[@]} -eq 0 ]; then echo "No files found in dist/"; exit 1; fi
+          gh release create "${{ github.ref_name }}" \
+            --repo "${{ github.repository }}" \
+            --title "${{ github.ref_name }}" \
+            --notes-file .github/release_notes.md \
+            "${files[@]}"
