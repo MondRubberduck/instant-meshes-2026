@@ -25,7 +25,16 @@ if(NOT TARGET tbb_static)
   add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../ext/tbb" ext_build/tbb)
 endif()
 
-# Core sources
+# Core sources: when built as part of the parent project, link the retopo_core
+# library instead of recompiling every source into the module (which invites
+# source-list drift between the CLI and Python builds).
+if(TARGET retopo_core)
+    pybind11_add_module(pyretopo bindings.cpp)
+    target_link_libraries(pyretopo PRIVATE retopo_core)
+    return()
+endif()
+
+# Standalone build (cmake -S python): compile the core directly.
 set(CORE_SOURCES
   ../src/retopo_engine.cpp
   ../src/adaptive_scale.cpp
@@ -46,6 +55,7 @@ set(CORE_SOURCES
   ../src/serializer.cpp
   ../src/cleanup.cpp
   ../src/dedge.cpp
+  ../src/smoothcurve.cpp
   ../ext/rply/rply.c
   ../ext/ufbx/ufbx.c
 )

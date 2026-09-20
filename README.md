@@ -28,7 +28,7 @@ We express immense gratitude to **Wenzel Jakob** and the ETH Zurich Interactive 
 
 | Feature | Original (2015) | Instant Meshes 2026 |
 | :--- | :--- | :--- |
-| **Exact Polycount Control** | Abstract scale slider only | **Adaptive bisection solver** targeting exact face counts (e.g. 500, 1500, 5000) |
+| **Polycount Budgets** | Abstract scale slider only | **Analytic area-based scale solver** targeting face-count budgets (typically lands within a few percent of the requested count) |
 | **Blender Integration** | External CLI scripts via temporary files | **Native in-memory extension** (Blender 4.2+ / 5.x) running in <50ms |
 | **Python Bindings** | None | **Zero-copy C++ extension** (`pyretopo`) supporting NumPy arrays directly |
 | **Architecture** | Monolithic GUI executable | **Decoupled C++17 static library** (`retopo_core`) + headless CLI |
@@ -43,10 +43,13 @@ We express immense gratitude to **Wenzel Jakob** and the ETH Zurich Interactive 
 ### Quick Start
 
 #### 1. Blender Extension (Blender 4.2+ & 5.x LTS)
-1. In Blender, navigate to **Edit → Preferences → Get Extensions**.
-2. Click the top-right menu icon and choose **Install from Disk...**.
-3. Select `instant_meshes_retopo.zip`.
-4. Open the 3D Viewport sidebar (**N panel → Retopo**) to remesh any active object in real time.
+1. Download `instant_meshes_retopo.zip` from the [**Releases** page](../../releases) — it is built from this source code by GitHub Actions, and its SHA-256 checksum is published next to it in `SHA256SUMS.txt`.
+2. In Blender, navigate to **Edit → Preferences → Get Extensions**.
+3. Click the top-right menu icon and choose **Install from Disk...**.
+4. Select `instant_meshes_retopo.zip`.
+5. Open the 3D Viewport sidebar (**N panel → Retopo**) to remesh any active object in real time.
+
+> **Python ABI note:** the extension ships a `pyretopo` module compiled for the Python version bundled with your Blender (Blender 5.x uses Python 3.13). On builds whose ABI has no matching `.pyd`, the add-on automatically falls back to the bundled CLI executable.
 
 #### 2. Python 3.13 Extension (`pyretopo`)
 ```python
@@ -58,8 +61,8 @@ result = pyretopo.retopologize(
     vertices=V,
     faces=F,
     target_faces=1000,
-    intrinsic=True,       # Intrinsic cotangent conditioning
-    mirror_symmetry=True  # Bilateral mirror symmetry
+    intrinsic=True,  # Intrinsic cotangent conditioning
+    mirror_x=True    # Bilateral mirror symmetry for guide contours
 )
 
 # Or load directly from an FBX, OBJ, or PLY file:
@@ -94,9 +97,32 @@ Requirements: CMake 3.15+, C++17 compliant compiler (MSVC 2022 / GCC 10+ / Clang
 ```bash
 git clone https://github.com/MondRubberduck/instant-meshes-2026.git
 cd instant-meshes-2026
-cmake -B build -DCMAKE_BUILD_TYPE=Release
+# Headless build (CLI + pyretopo Python module, no GUI dependencies):
+cmake -B build -DINSTANT_MESHES_BUILD_GUI=OFF
 cmake --build build --config Release -j
+
+# Full build including the standalone GUI (requires OpenGL / NanoGUI):
+cmake -B build_gui
+cmake --build build_gui --config Release -j
 ```
+
+---
+
+### Antivirus / "Download Blocked"? Please Read This
+
+This project distributes **unsigned native binaries** (an `.exe` CLI and `.pyd` Python extension modules). New, unsigned executables with low download prevalence are routinely flagged by heuristic scanners (e.g., Windows Defender `Trojan:Win32/Wacatac.B!ml`, browser "This file may be dangerous" warnings). **These are false positives** — every release binary is compiled by public GitHub Actions runs from the source in this repository, with nothing added by hand:
+
+* Build pipeline: [`.github/workflows/release.yml`](.github/workflows/release.yml) — inspect the exact build steps for any release tag.
+* Every release ships a `SHA256SUMS.txt`; verify what you downloaded against it:
+  ```powershell
+  Get-FileHash instant_meshes_retopo.zip -Algorithm SHA256   # Windows
+  sha256sum instant_meshes_retopo.zip                        # Linux / macOS
+  ```
+* This repository deliberately contains **no committed binaries** — if you "Download ZIP" of the source, you get source only. (Earlier revisions shipped `.exe`/`.pyd` files inside the repository, which is precisely what got archives blocked by scanners. That has been fixed; distributing anything compiled happens exclusively through GitHub Releases.)
+
+**If a download is blocked on your machine:** in Edge/Chrome choose *Keep* / *More info → Run anyway*, or restore the file from Windows *Protection history*. If you want the flag removed for everyone, report the false positive to the vendor — Microsoft accepts developer submissions at <https://www.microsoft.com/wdsi/filesubmission>, which typically clears SmartScreen/Defender detections within a few days.
+
+**For maintainers:** after publishing a release, upload the released files to <https://www.virustotal.com> and submit false-positive reports to any engine that flags them (each vendor has a dispute link on the detection card). The durable long-term fix is code signing — [Azure Trusted Signing](https://azure.microsoft.com/products/trusted-signing) (~$9.99/month, no hardware token), [SignPath's free open-source program](https://signpath.org/), or a [Certum open-source code signing certificate](https://www.certum.eu/) — signed builds gradually accumulate SmartScreen reputation and stop being flagged.
 
 ---
 

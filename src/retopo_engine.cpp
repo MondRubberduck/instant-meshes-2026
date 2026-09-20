@@ -15,6 +15,7 @@
 #include "field.h"
 #include "bvh.h"
 #include <iostream>
+#include <memory>
 
 RetopoEngine::RetopoEngine() {
 }
@@ -66,22 +67,27 @@ RetopoOutput RetopoEngine::execute(const RetopoSettings &settings, const Progres
         return out;
     }
 
+    /* Owned resources are declared outside the try block so that error paths
+       release them as well: the hierarchy holds large manually-managed arrays
+       (freed via free()), and the BVH is kept in a unique_ptr. */
+    MultiResolutionHierarchy mRes;
+    std::unique_ptr<BVH> bvh;
+
     try {
         MatrixXu F = m_F;
         MatrixXf V = m_V;
         MatrixXf N = m_N;
         VectorXf A;
         std::set<uint32_t> crease_in, crease_out;
-        BVH *bvh = nullptr;
         AdjacencyMatrix adj = nullptr;
 
         bool pointcloud = (F.size() == 0);
         MeshStats stats = compute_mesh_stats(F, V, settings.deterministic);
 
         if (pointcloud) {
-            bvh = new BVH(&F, &V, &N, stats.mAABB);
+            bvh.reset(new BVH(&F, &V, &N, stats.mAABB));
             bvh->build();
-            adj = generate_adjacency_matrix_pointcloud(V, N, bvh, stats, settings.knn_points, settings.deterministic);
+            adj = generate_adjacency_matrix_pointcloud(V, N, bvh.get(), stats, settings.knn_points, settings.deterministic);
             A.resize(V.cols());
             A.setConstant(1.0f);
         }
@@ -105,8 +111,6 @@ RetopoOutput RetopoEngine::execute(const RetopoSettings &settings, const Progres
                   << scale_res.target_face_count << " faces, "
                   << "scale = " << scale << ", adaptivity = " << settings.adaptivity
                   << ", contours = " << m_contour_system.count() << std::endl;
-
-        MultiResolutionHierarchy mRes;
 
         if (!pointcloud) {
             VectorXu V2E, E2E;
@@ -152,7 +156,7 @@ RetopoOutput RetopoEngine::execute(const RetopoSettings &settings, const Progres
         if (bvh) {
             bvh->setData(&mRes.F(), &mRes.V(), &mRes.N());
         } else {
-            bvh = new BVH(&mRes.F(), &mRes.V(), &mRes.N(), stats.mAABB);
+            bvh.reset(new BVH(&mRes.F(), &mRes.V(), &mRes.N(), stats.mAABB));
             bvh->build();
         }
 
@@ -179,7 +183,7 @@ RetopoOutput RetopoEngine::execute(const RetopoSettings &settings, const Progres
         // 5. Apply user contour guides (orientation flow + edge-loop snapping)
         if (m_contour_system.count() > 0) {
             m_contour_system.set_mirror_x(settings.mirror_x);
-            m_contour_system.apply_to_hierarchy(mRes, bvh, settings.rosy, settings.posy);
+            m_contour_system.apply_to_hierarchy(mRes, bvh.get(), settings.rosy, settings.posy);
         }
 
         // 6. Optimize orientation field
@@ -188,20 +192,28 @@ RetopoOutput RetopoEngine::execute(const RetopoSettings &settings, const Progres
         optimizer.setPoSy(settings.posy);
         optimizer.setExtrinsic(!settings.intrinsic);
 
-        optimizer.optimizeOrientations(-1);
-        optimizer.notify();
-        optimizer.wait();
+        /* ~Optimizer() does not join its worker thread, so an exception inside
+           this window would leave a joinable std::thread behind and call
+           std::terminate() during unwinding. Shut it down before rethrowing. */
+        try {
+            optimizer.optimizeOrientations(-1);
+            optimizer.notify();
+            optimizer.wait();
 
-        // 7. Modern Singularity Regularization & Dipole Cancellation (QuadriFlow-inspired)
-        if (settings.filter_singularities && settings.rosy == 4 && settings.posy == 4) {
-            SingularityFilter::regularize_singularities(mRes, settings.rosy, scale * 2.5f);
+            // 7. Modern Singularity Regularization & Dipole Cancellation (QuadriFlow-inspired)
+            if (settings.filter_singularities && settings.rosy == 4 && settings.posy == 4) {
+                SingularityFilter::regularize_singularities(mRes, settings.rosy, scale * 2.5f, !settings.intrinsic);
+            }
+
+            // 8. Optimize position field
+            optimizer.optimizePositions(-1);
+            optimizer.notify();
+            optimizer.wait();
+            optimizer.shutdown();
+        } catch (...) {
+            try { optimizer.shutdown(); } catch (...) { }
+            throw;
         }
-
-        // 8. Optimize position field
-        optimizer.optimizePositions(-1);
-        optimizer.notify();
-        optimizer.wait();
-        optimizer.shutdown();
 
         // 9. Mesh extraction
         MatrixXf O_extr, N_extr, Nf_extr;
@@ -211,10 +223,9 @@ RetopoOutput RetopoEngine::execute(const RetopoSettings &settings, const Progres
 
         MatrixXu F_extr;
         extract_faces(adj_extr, O_extr, N_extr, Nf_extr, F_extr, settings.posy,
-                      mRes.scale(), crease_out, true, settings.pure_quad, bvh, settings.smooth_iterations);
+                      mRes.scale(), crease_out, true, settings.pure_quad, bvh.get(), settings.smooth_iterations);
 
-        if (bvh)
-            delete bvh;
+        bvh.reset();
 
         out.V = std::move(O_extr);
         out.F = std::move(F_extr);
@@ -235,8 +246,10 @@ RetopoOutput RetopoEngine::execute(const RetopoSettings &settings, const Progres
 
         MeshQualityReporter::print_report(out.quality_report);
 
+        mRes.free();
         return out;
     } catch (const std::exception &e) {
+        mRes.free();
         out.success = false;
         out.error_message = e.what();
         std::cerr << "[RetopoEngine] Error: " << e.what() << std::endl;

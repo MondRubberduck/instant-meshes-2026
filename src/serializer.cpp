@@ -95,8 +95,11 @@ Serializer::Serializer(const std::string &filename, bool compatibilityMode, cons
                     const_cast<std::vector<std::vector<type>>&>(*data->list_##type); \
                 if (value_index >= 0) \
                     vec[index][value_index] = (type) ply_get_argument_value(argument); \
-                else \
-                    vec[index].resize(length); \
+                else { \
+                    if (length < 0 || length > 100000000L) \
+                        throw std::runtime_error("Serializer: unreasonable list length in state file!"); \
+                    vec[index].resize((size_t) length); \
+                } \
             } \
             break;
 
@@ -132,6 +135,11 @@ Serializer::Serializer(const std::string &filename, bool compatibilityMode, cons
             long cols = 0, rows = 0;
 
             ply_get_element_info(element, &element_name, &cols);
+            /* A second element with an existing name would replace the allocated
+               matrix while the first element's callbacks keep writing into it. */
+            if (mData.find(element_name) != mData.end())
+                throw std::runtime_error("Serializer: duplicate element \"" +
+                                         std::string(element_name) + "\" in \"" + filename + "\"!");
             e_ply_type type = PLY_UINT8;
             bool fail = false, list = false;
 

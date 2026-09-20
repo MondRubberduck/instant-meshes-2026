@@ -44,6 +44,10 @@ MeshQualityReport MeshQualityReporter::analyze(const MatrixXu &F, const MatrixXf
 
     r.quad_ratio = r.total_faces > 0 ? ((Float)r.quad_faces / (Float)r.total_faces) * 100.0f : 0.0f;
 
+    /* Regular interior valence is 4 on quad meshes but 6 on triangle meshes;
+       pick the expectation from the dominant face type. */
+    const int expected_valence = (r.tri_faces > r.quad_faces) ? 6 : 4;
+
     // 2. Build Edge connectivity and vertex adjacency
     struct UndirectedEdge {
         uint32_t v0, v1;
@@ -111,9 +115,10 @@ MeshQualityReport MeshQualityReporter::analyze(const MatrixXu &F, const MatrixXf
         r.valence_histogram[valence]++;
 
         bool is_boundary = boundary_vertices.find(v) != boundary_vertices.end();
-        if (!is_boundary) {
+        /* Isolated vertices (referenced by no face) are neither interior nor boundary */
+        if (!is_boundary && valence > 0) {
             r.interior_vertices++;
-            if (valence == 4)
+            if (valence == expected_valence)
                 r.regular_valence_count++;
         }
 
@@ -133,16 +138,19 @@ MeshQualityReport MeshQualityReporter::analyze(const MatrixXu &F, const MatrixXf
                     }
                 }
             }
+            /* Count each offending vertex once, not once per offending edge */
+            bool nm_vertex = false;
             int endpoints = 0;
             for (const auto &p : local_edge_count) {
                 if (p.second == 1)
                     endpoints++;
                 else if (p.second > 2)
-                    r.nonmanifold_vertices++;
+                    nm_vertex = true;
             }
-            if (endpoints > 2) {
+            if (endpoints > 2)
+                nm_vertex = true;
+            if (nm_vertex)
                 r.nonmanifold_vertices++;
-            }
         }
     }
 
@@ -182,7 +190,15 @@ MeshQualityReport MeshQualityReporter::analyze(const MatrixXu &F, const MatrixXf
             } else if (Nf.cols() == r.total_faces) {
                 corner_norm = Nf.col(f);
             } else {
-                corner_norm = ((p[1] - p[0]).cross(p[3] - p[0]) + (p[3] - p[2]).cross(p[1] - p[2])).normalized();
+                corner_norm = (p[1] - p[0]).cross(p[3] - p[0]) + (p[3] - p[2]).cross(p[1] - p[2]);
+                Float cn = corner_norm.norm();
+                if (cn < 1e-12f) {
+                    /* Bilinear normal cancels on a planar self-touching quad:
+                       classify it as degenerate rather than perfectly regular. */
+                    face_min_j = -1.0f;
+                    break;
+                }
+                corner_norm /= cn;
             }
             Float j_val = e_in.cross(e_out).dot(corner_norm) / (l_in * l_out);
             if (j_val < face_min_j)

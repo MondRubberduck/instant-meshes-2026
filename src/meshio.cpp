@@ -16,6 +16,7 @@
 #include "ufbx.h"
 #include <unordered_map>
 #include <fstream>
+#include <limits>
 #if !defined(_WIN32)
 #include <libgen.h>
 #endif
@@ -84,10 +85,29 @@ void load_ply(const std::string &filename, MatrixXu &F, MatrixXf &V,
         long nInstances;
 
         ply_get_element_info(element, &name, &nInstances);
-        if (!strcmp(name, "vertex"))
+        /* Compare through uint64_t: on Windows 'long' is 32 bits, so casting
+           uint32_t::max() to long would wrap negative and reject everything.
+           Negative counts also become huge unsigned values and are caught. */
+        if ((uint64_t) nInstances > (uint64_t) std::numeric_limits<uint32_t>::max()) {
+            ply_close(ply);
+            throw std::runtime_error("PLY file \"" + filename + "\" declares an unreasonable element count!");
+        }
+        if (!strcmp(name, "vertex")) {
+            /* rply binds read callbacks to the first element of a given name but
+               would still deliver instances of a duplicate declaration, which
+               would overflow the buffers sized from the last declaration. */
+            if (vertexCount != 0) {
+                ply_close(ply);
+                throw std::runtime_error("PLY file \"" + filename + "\" declares multiple vertex elements!");
+            }
             vertexCount = (uint32_t) nInstances;
-        else if (!strcmp(name, "face"))
+        } else if (!strcmp(name, "face")) {
+            if (faceCount != 0) {
+                ply_close(ply);
+                throw std::runtime_error("PLY file \"" + filename + "\" declares multiple face elements!");
+            }
             faceCount = (uint32_t) nInstances;
+        }
     }
 
     if (vertexCount == 0 && faceCount == 0)
@@ -107,9 +127,11 @@ void load_ply(const std::string &filename, MatrixXu &F, MatrixXf &V,
 
     struct FaceCallbackData {
         MatrixXu &F;
+        uint32_t vertexCount;
+        bool bad_face;   // set when a malformed face was seen (see rply_index_cb)
         const ProgressCallback &progress;
-        FaceCallbackData(MatrixXu &F, const ProgressCallback &progress)
-            : F(F), progress(progress) { }
+        FaceCallbackData(MatrixXu &F, uint32_t vertexCount, const ProgressCallback &progress)
+            : F(F), vertexCount(vertexCount), bad_face(false), progress(progress) { }
     };
 
     struct VertexNormalCallbackData {
@@ -144,14 +166,26 @@ void load_ply(const std::string &filename, MatrixXu &F, MatrixXf &V,
         long length, value_index, index;
         ply_get_argument_property(argument, nullptr, &length, &value_index);
 
-        if (length != 3)
-            throw std::runtime_error("Only triangle faces are supported!");
-
+        /* Never throw from here: unwinding C++ exceptions through rply's C
+           frames is undefined behavior and crashes on some toolchains.
+           Record the failure and return 0, which aborts ply_read cleanly. */
         ply_get_argument_user_data(argument, (void **) &data, nullptr);
+
+        if (length != 3) {
+            data->bad_face = true;
+            return 0;
+        }
+
         ply_get_argument_element(argument, nullptr, &index);
 
-        if (value_index >= 0)
-            data->F(value_index, index) = (uint32_t) ply_get_argument_value(argument);
+        if (value_index >= 0) {
+            uint32_t idx = (uint32_t) ply_get_argument_value(argument);
+            if (idx >= data->vertexCount) {
+                data->bad_face = true;
+                return 0;
+            }
+            data->F(value_index, index) = idx;
+        }
 
         if (data->progress && value_index == 0 && index % 500000 == 0)
             data->progress("Loading face data", index / (Float) data->F.cols());
@@ -160,7 +194,7 @@ void load_ply(const std::string &filename, MatrixXu &F, MatrixXf &V,
     };
 
     VertexCallbackData vcbData(V, progress);
-    FaceCallbackData fcbData(F, progress);
+    FaceCallbackData fcbData(F, vertexCount, progress);
     VertexNormalCallbackData vncbData(N, progress);
 
     if (!ply_set_read_cb(ply, "vertex", "x", rply_vertex_cb, &vcbData, 0) ||
@@ -187,6 +221,9 @@ void load_ply(const std::string &filename, MatrixXu &F, MatrixXf &V,
 
     if (!ply_read(ply)) {
         ply_close(ply);
+        if (fcbData.bad_face)
+            throw std::runtime_error("PLY file \"" + filename +
+                "\" contains malformed faces (non-triangles or out-of-bounds vertex indices)!");
         throw std::runtime_error("Error while loading PLY data from \"" + filename + "\"!");
     }
 

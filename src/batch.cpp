@@ -27,7 +27,8 @@ static std::vector<GuideContour> load_contours_from_obj(const std::string &path)
 
         if (token == "v") {
             Float x, y, z;
-            iss >> x >> y >> z;
+            if (!(iss >> x >> y >> z))
+                continue;
             vertices.push_back(Vector3f(x, y, z));
         } else if (token == "l") {
             GuideContour contour;
@@ -61,7 +62,7 @@ static std::vector<GuideContour> load_contours_from_obj(const std::string &path)
     return contours;
 }
 
-void batch_process(const std::string &input, const std::string &output,
+bool batch_process(const std::string &input, const std::string &output,
                    int rosy, int posy, Float scale, int face_count,
                    int vertex_count, Float creaseAngle, bool extrinsic,
                    bool align_to_boundaries, int smooth_iter, int knn_points,
@@ -84,7 +85,7 @@ void batch_process(const std::string &input, const std::string &output,
     RetopoEngine engine;
     if (!engine.load_file(input)) {
         cerr << "Error: could not load input mesh: " << input << endl;
-        return;
+        return false;
     }
 
     if (!contour_file.empty()) {
@@ -113,10 +114,12 @@ void batch_process(const std::string &input, const std::string &output,
 
     if (!result.success) {
         cerr << "Retopology failed: " << result.error_message << endl;
-        return;
+        return false;
     }
 
     if (!RetopoEngine::save_mesh(output, result)) {
         cerr << "Error: failed to write output mesh to " << output << endl;
+        return false;
     }
+    return true;
 }

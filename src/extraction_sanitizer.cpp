@@ -298,7 +298,12 @@ size_t ExtractionSanitizer::sanitize_final_mesh(
             if (idx[0] >= nV || idx[1] >= nV || idx[2] >= nV || idx[3] >= nV)
                 continue;
             Vector3f p[4] = { O.col(idx[0]), O.col(idx[1]), O.col(idx[2]), O.col(idx[3]) };
-            Vector3f avg_norm = (N.col(idx[0]) + N.col(idx[1]) + N.col(idx[2]) + N.col(idx[3])).normalized();
+            Vector3f avg_norm = N.col(idx[0]) + N.col(idx[1]) + N.col(idx[2]) + N.col(idx[3]);
+            Float an = avg_norm.norm();
+            if (an < 1e-6f)
+                continue; /* cancelling vertex normals (sharp fold): a normalized()
+                              here would be NaN and silently disable the checks below */
+            avg_norm /= an;
             Vector3f fn = ((p[1] - p[0]).cross(p[3] - p[0]) + (p[3] - p[2]).cross(p[1] - p[2]));
             if (fn.norm() > 1e-6f)
                 fn.normalize();

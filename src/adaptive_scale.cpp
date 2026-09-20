@@ -7,6 +7,7 @@
 #include "adaptive_scale.h"
 #include <algorithm>
 #include <cmath>
+#include <iostream>
 #include <vector>
 
 VectorXf AdaptiveScaleManager::compute_mean_curvature(
@@ -37,10 +38,11 @@ VectorXf AdaptiveScaleManager::compute_mean_curvature(
         if (double_area < 1e-12f)
             continue;
 
-        // Cotangents of opposite angles
-        Float cot0 = -e1.dot(e2) / double_area;
-        Float cot1 = -e2.dot(e0) / double_area;
-        Float cot2 = -e0.dot(e1) / double_area;
+        // Cotangents of opposite angles, clamped for robustness on slivers
+        // (mirrors the [eps, 100] convention of the intrinsic adjacency build)
+        Float cot0 = std::max(-100.0f, std::min(100.0f, -e1.dot(e2) / double_area));
+        Float cot1 = std::max(-100.0f, std::min(100.0f, -e2.dot(e0) / double_area));
+        Float cot2 = std::max(-100.0f, std::min(100.0f, -e0.dot(e1) / double_area));
 
         // Accumulate Laplace-Beltrami operator
         laplacian.col(i1) += cot2 * (v0 - v1);
@@ -139,6 +141,9 @@ AdaptiveScaleResult AdaptiveScaleManager::compute_scale_field(
         }
     }
     result.surface_area = total_area;
+    /* Degenerate input (all zero-area faces) would otherwise drive base_scale
+       to zero and produce an infinite inverse scale downstream. */
+    const Float safe_total_area = std::max(total_area, 1e-10f);
 
     // 2. Resolve target counts
     if (target_scale <= 0 && target_vertex_count <= 0 && target_face_count <= 0) {
@@ -148,7 +153,12 @@ AdaptiveScaleResult AdaptiveScaleManager::compute_scale_field(
     if (target_scale > 0) {
         // Direct physical scale given (coarse edge length)
         Float coarse_face_area = (posy == 4) ? (target_scale * target_scale) : (std::sqrt(3.0f) / 4.0f * target_scale * target_scale);
-        uint32_t coarse_faces = (uint32_t)std::round(total_area / coarse_face_area);
+        double coarse_faces_d = std::round((double) safe_total_area / (double) coarse_face_area);
+        if (coarse_faces_d > 1.0e9) {
+            std::cerr << "[AdaptiveScale] Warning: requested scale is too small for this mesh; clamping face count." << std::endl;
+            coarse_faces_d = 1.0e9; /* leave headroom for the x4 pure-quad expansion below */
+        }
+        uint32_t coarse_faces = (uint32_t) coarse_faces_d;
         if (posy == 4 && pure_quad) {
             target_face_count = coarse_faces * 4;
             target_vertex_count = target_face_count;
@@ -218,11 +228,13 @@ AdaptiveScaleResult AdaptiveScaleManager::compute_scale_field(
             coarse_face_target = std::max(1u, (uint32_t)std::round(result.target_face_count / 4.0f));
         }
 
-        Float base_face_area = total_area / (Float)coarse_face_target;
-        base_scale = (posy == 4) 
-            ? std::sqrt(base_face_area) 
+        Float base_face_area = safe_total_area / (Float)coarse_face_target;
+        base_scale = (posy == 4)
+            ? std::sqrt(base_face_area)
             : (2.0f * std::sqrt(base_face_area * std::sqrt(1.0f / 3.0f)));
     }
+
+    base_scale = std::max(base_scale, 1e-7f);
 
     result.global_scale = base_scale;
     result.local_scale.resize(n_vertices);

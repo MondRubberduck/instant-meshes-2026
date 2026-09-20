@@ -1,6 +1,6 @@
 # InstantMeshes 2026 - Blender Plugin & Python API
 
-This document describes how to use the InstantMeshes 2026 retopology engine directly inside **Blender (3.x, 4.x, and 5.x LTS)** with interactive topology flow control and target poly counts.
+This document describes how to use the InstantMeshes 2026 retopology engine directly inside **Blender (4.2+ and 5.x LTS)** with interactive topology flow control and target poly counts.
 
 ---
 

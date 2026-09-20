@@ -34,6 +34,19 @@ static Vector3f closest_point_on_triangle(
     Vector3f ab = b - a;
     Vector3f ac = c - a;
     Vector3f ap = p - a;
+
+    /* Degenerate triangle: the barycentric denominators below all vanish.
+       Fall back to the nearest of the three vertices. */
+    if (ab.cross(ac).squaredNorm() < 1e-24f) {
+        Float da = (p - a).squaredNorm();
+        Float db = (p - b).squaredNorm();
+        Float dc = (p - c).squaredNorm();
+        if (da <= db && da <= dc) { bary = Vector3f(1, 0, 0); return a; }
+        if (db <= dc)             { bary = Vector3f(0, 1, 0); return b; }
+        bary = Vector3f(0, 0, 1);
+        return c;
+    }
+
     Float d1 = ab.dot(ap);
     Float d2 = ac.dot(ap);
     if (d1 <= 0.0f && d2 <= 0.0f) {
@@ -113,12 +126,20 @@ std::vector<ProjectedContourPoint> ContourGuideSystem::project_and_resample(
         if (seg_len < 1e-6f)
             continue;
 
+        /* Cap samples per segment: a pathological step size must not stall
+           the loop forever when `traveled` stops advancing in float arithmetic. */
+        size_t max_samples = (size_t)(seg_len / std::max(step_size, 1e-12f)) + 2;
+        max_samples = std::min(max_samples, (size_t)10000000);
+        size_t produced = 0;
+
         Float traveled = 0.0f;
         while (traveled + (step_size - current_dist) <= seg_len) {
             traveled += (step_size - current_dist);
             Float alpha = traveled / seg_len;
             resampled.push_back(p0 * (1.0f - alpha) + p1 * alpha);
             current_dist = 0.0f;
+            if (++produced > max_samples)
+                break;
         }
         current_dist += (seg_len - traveled);
     }

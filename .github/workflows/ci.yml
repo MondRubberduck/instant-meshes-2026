@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  build-test:
+    name: Build & test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+          - os: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Configure (headless CLI + pyretopo)
+        shell: pwsh
+        run: |
+          cmake -S . -B build -DINSTANT_MESHES_BUILD_GUI=OFF
+        env:
+          Python_ROOT: ${{ env.pythonLocation }}
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Install numpy
+        run: python -m pip install numpy
+
+      - name: Python integration tests (pyretopo)
+        shell: pwsh
+        run: |
+          $mod = Get-ChildItem -Recurse -Path build -Include "pyretopo*.pyd","pyretopo*.so" | Select-Object -First 1
+          if (-not $mod) { throw "pyretopo module not found in build output" }
+          $env:PYTHONPATH = $mod.DirectoryName
+          python test_pyretopo.py
+
+      - name: CLI smoke test
+        shell: pwsh
+        run: |
+          $cli = Get-ChildItem -Recurse -Path build -Include "InstantMeshes2026CLI.exe","InstantMeshes2026CLI" |
+                 Where-Object { $_.FullName -notmatch "CMakeFiles|\.dir" } | Select-Object -First 1
+          if (-not $cli) { throw "CLI executable not found in build output" }
+          $log = & $cli.FullName -f 500 -i -o test_output_ci.obj torus.obj 2>&1 | Out-String
+          $log
+          if ($LASTEXITCODE -ne 0) { throw "CLI exited with code $LASTEXITCODE" }
+          if (-not (Test-Path test_output_ci.obj)) { throw "CLI produced no output file" }
+          if ($log -notmatch "\[PASSED\]") { throw "Quality gates did not pass" }
+
+      - uses: actions/upload-artifact@v4
+        if: matrix.os == 'windows-latest'
+        with:
+          name: windows-headless-build
+          path: |
+            build/**/InstantMeshes2026CLI.exe
+            build/**/pyretopo*.pyd
+          if-no-files-found: error

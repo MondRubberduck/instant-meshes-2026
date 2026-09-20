@@ -53,19 +53,33 @@ int main(int argc, char **argv) {
                     cerr << "Missing thread count!" << endl;
                     return -1;
                 }
-                nprocs = str_to_uint32_t(argv[i]);
+                char *end = nullptr;
+                long value = strtol(argv[i], &end, 10);
+                if (end == argv[i] || *end != '\0' || value <= 0 || value > 1024) {
+                    cerr << "Invalid thread count \"" << argv[i] << "\" (expected 1..1024)!" << endl;
+                    return -1;
+                }
+                nprocs = (int) value;
             } else if (strcmp("--smooth", argv[i]) == 0 || strcmp("-S", argv[i]) == 0) {
                 if (++i >= argc) {
                     cerr << "Missing smoothing iteration count argument!" << endl;
                     return -1;
                 }
                 smooth_iter = str_to_uint32_t(argv[i]);
+                if (smooth_iter < 1 || smooth_iter > 1000) {
+                    cerr << "Invalid smoothing iteration count \"" << argv[i] << "\" (expected 1..1000)!" << endl;
+                    return -1;
+                }
             } else if (strcmp("--knn", argv[i]) == 0 || strcmp("-k", argv[i]) == 0) {
                 if (++i >= argc) {
                     cerr << "Missing knn point count argument!" << endl;
                     return -1;
                 }
                 knn_points = str_to_uint32_t(argv[i]);
+                if (knn_points < 1 || knn_points > 1000) {
+                    cerr << "Invalid knn point count \"" << argv[i] << "\" (expected 1..1000)!" << endl;
+                    return -1;
+                }
             } else if (strcmp("--crease", argv[i]) == 0 || strcmp("-c", argv[i]) == 0) {
                 if (++i >= argc) {
                     cerr << "Missing crease angle argument!" << endl;
@@ -192,11 +206,11 @@ int main(int argc, char **argv) {
 
     if (!batchOutput.empty() && args.size() == 1) {
         try {
-            batch_process(args[0], batchOutput, rosy, posy, scale, face_count,
-                          vertex_count, crease_angle, extrinsic,
-                          align_to_boundaries, smooth_iter, knn_points,
-                          !dominant, deterministic, adaptivity, contour_file);
-            return 0;
+            bool ok = batch_process(args[0], batchOutput, rosy, posy, scale, face_count,
+                                    vertex_count, crease_angle, extrinsic,
+                                    align_to_boundaries, smooth_iter, knn_points,
+                                    !dominant, deterministic, adaptivity, contour_file);
+            return ok ? 0 : -1;
         } catch (const std::exception &e) {
             cerr << "Caught runtime error : " << e.what() << endl;
             return -1;
@@ -231,7 +245,7 @@ int main(int argc, char **argv) {
         }
 
         nanogui::shutdown();
-    } catch (const std::runtime_error &e) {
+    } catch (const std::exception &e) {
         std::string error_msg = std::string("Caught a fatal error: ") + std::string(e.what());
         #if defined(_WIN32)
             MessageBoxA(nullptr, error_msg.c_str(), NULL, MB_ICONERROR | MB_OK);

@@ -12,6 +12,9 @@
 
 namespace py = pybind11;
 
+/* field.cpp references this global (extern int nprocs) when initializing its
+   TBB scheduler; main.cpp defines it for the CLI/GUI builds, but the Python
+   module does not link main.cpp, so it must be defined here. */
 int nprocs = -1;
 
 PYBIND11_MODULE(pyretopo, m) {
@@ -115,15 +118,27 @@ PYBIND11_MODULE(pyretopo, m) {
     py::class_<RetopoEngine>(m, "RetopoEngine")
         .def(py::init<>())
         .def("set_mesh", [](RetopoEngine &engine, const MatrixXf &vertices, const MatrixXu &faces) {
+            if (vertices.cols() != 3)
+                throw py::value_error("vertices must have shape (N, 3)");
+            if (faces.cols() != 3)
+                throw py::value_error("faces must have shape (M, 3) triangles");
+            if (vertices.rows() == 0 || faces.rows() == 0)
+                throw py::value_error("vertices and faces must be non-empty");
             engine.set_mesh(faces.transpose(), vertices.transpose());
         }, py::arg("vertices"), py::arg("faces"), "Set mesh with (N, 3) vertices and (M, 3) triangle faces.")
-        .def("load_file", &RetopoEngine::load_file, py::arg("filename"))
+        .def("load_file", [](RetopoEngine &engine, const std::string &filename) {
+            py::gil_scoped_release release;
+            return engine.load_file(filename);
+        }, py::arg("filename"))
         .def("add_contour", &RetopoEngine::add_contour, py::arg("contour"))
         .def("add_contour_points", [](RetopoEngine &engine, const std::vector<Vector3f> &points, bool is_edge_loop, bool is_closed, Float weight) {
             engine.add_contour_points(points, is_edge_loop, is_closed, weight);
         }, py::arg("points"), py::arg("is_edge_loop") = true, py::arg("is_closed") = false, py::arg("weight") = 1.0f)
         .def("clear_contours", &RetopoEngine::clear_contours)
         .def("execute", [](RetopoEngine &engine, const RetopoSettings &settings) {
+            /* The pipeline is pure C++ and runs for potentially seconds; release
+               the GIL so other Python threads (e.g. Blender's UI) keep running. */
+            py::gil_scoped_release release;
             return engine.execute(settings);
         }, py::arg("settings"));
 
@@ -142,6 +157,13 @@ PYBIND11_MODULE(pyretopo, m) {
         bool mirror_x,
         bool intrinsic
     ) -> RetopoOutput {
+        if (vertices.cols() != 3)
+            throw py::value_error("vertices must have shape (N, 3)");
+        if (faces.cols() != 3)
+            throw py::value_error("faces must have shape (M, 3) triangles");
+        if (vertices.rows() == 0 || faces.rows() == 0)
+            throw py::value_error("vertices and faces must be non-empty");
+
         RetopoEngine engine;
         engine.set_mesh(faces.transpose(), vertices.transpose());
 
@@ -160,6 +182,7 @@ PYBIND11_MODULE(pyretopo, m) {
         settings.mirror_x = mirror_x;
         settings.intrinsic = intrinsic;
 
+        py::gil_scoped_release release;
         return engine.execute(settings);
     }, 
     py::arg("vertices"),

@@ -65,3 +65,15 @@ datasets/
 scratch/
 *.mp4
 temp_raw*.mp4
+# Never commit release binaries - they trigger antivirus flags on "Download ZIP"
+# Distribute via GitHub Releases built by CI (.github/workflows/release.yml) instead
+/addon/*.pyd
+/addon/*.exe
+/blender_extension/*.pyd
+/blender_extension/*.exe
+/instant_meshes_2026.zip
+/instant_meshes_retopo.zip
+/dist/
+!ext/pybind11_modern/tools/*.cmake
+!ext/tbb/build/
+!ext/tbb/build/version_string.ver.in

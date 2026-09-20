@@ -86,7 +86,8 @@ std::vector<SingularityPair> SingularityFilter::find_dipoles(
 size_t SingularityFilter::regularize_singularities(
     MultiResolutionHierarchy &mRes,
     int rosy,
-    Float max_pair_distance
+    Float max_pair_distance,
+    bool extrinsic
 ) {
     if (rosy != 4 || mRes.levels() == 0 || mRes.F().cols() == 0)
         return 0;
@@ -97,7 +98,7 @@ size_t SingularityFilter::regularize_singularities(
     }
 
     std::map<uint32_t, uint32_t> initial_singularities;
-    compute_orientation_singularities(mRes, initial_singularities, true, rosy);
+    compute_orientation_singularities(mRes, initial_singularities, extrinsic, rosy);
 
     size_t before_count = initial_singularities.size();
     if (before_count < 2)
@@ -160,17 +161,17 @@ size_t SingularityFilter::regularize_singularities(
     }
 
     // Run local orientation relaxation on level 0
-    optimize_orientations(mRes, 0, true, rosy, nullptr);
+    optimize_orientations(mRes, 0, extrinsic, rosy, nullptr);
 
     // Propagate regularized solution up the hierarchy
     mRes.propagateSolution(rosy);
 
     std::map<uint32_t, uint32_t> post_singularities;
-    compute_orientation_singularities(mRes, post_singularities, true, rosy);
+    compute_orientation_singularities(mRes, post_singularities, extrinsic, rosy);
 
-    size_t cancelled = (before_count > post_singularities.size()) 
-        ? (before_count - post_singularities.size()) / 2 
-        : dipoles.size();
+    size_t cancelled = (before_count > post_singularities.size())
+        ? (before_count - post_singularities.size()) / 2
+        : 0;
 
     std::cout << "[SingularityFilter] Regularization complete. Singularities reduced from "
               << before_count << " to " << post_singularities.size() << "." << std::endl;

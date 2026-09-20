@@ -1,9 +1,18 @@
 import sys
 import os
 
-# Add build directory to python path
-pyd_dir = os.path.abspath("build_py/Release")
-sys.path.insert(0, pyd_dir)
+# Locate the pyretopo module: prefer fresh CMake build outputs, fall back to
+# the prebuilt module shipped in blender_extension/.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+for candidate in (
+    os.path.join(_HERE, "build_py", "Release"),
+    os.path.join(_HERE, "build_py"),
+    os.path.join(_HERE, "build", "python", "Release"),
+    os.path.join(_HERE, "build", "python"),
+    os.path.join(_HERE, "blender_extension"),
+):
+    if os.path.isdir(candidate):
+        sys.path.insert(0, candidate)
 
 import pyretopo
 import numpy as np

@@ -24,16 +24,18 @@ public:
 
     /**
      * Detect and cancel opposite-sign singularity dipoles on the orientation field.
-     * 
+     *
      * @param mRes Hierarchy containing orientation field Q, normals N, faces F, vertices V.
      * @param rosy Rotational symmetry (default: 4 for quads)
      * @param max_pair_distance Maximum distance to consider for dipole cancellation (<= 0 for auto: 2.5 * scale)
+     * @param extrinsic Use extrinsic field compatibility (match the mode the field was optimized in)
      * @return Number of cancelled dipole pairs
      */
     static size_t regularize_singularities(
         MultiResolutionHierarchy &mRes,
         int rosy = 4,
-        Float max_pair_distance = -1.0f
+        Float max_pair_distance = -1.0f,
+        bool extrinsic = true
     );
 
     /**

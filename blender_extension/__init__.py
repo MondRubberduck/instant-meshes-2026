@@ -1,8 +1,8 @@
 bl_info = {
     "name": "InstantMeshes2026 Retopology",
     "author": "Antigravity / Instant Meshes 2026 Team (original by Jakob et al.)",
-    "version": (2026, 1, 0),
-    "blender": (3, 0, 0),
+    "version": (0, 2, 5),
+    "blender": (4, 2, 0),
     "location": "View3D > Sidebar > Retopo",
     "description": "InstantMeshes 2026 field-aligned quad retopology with adaptive density and contour flow guidance",
     "category": "Mesh",
@@ -15,23 +15,20 @@ import sys
 import subprocess
 import tempfile
 
-# Try importing compiled C++ python module
+# Try importing compiled C++ python module.
+# The .pyd is built per Python ABI; Blender 4.2-4.5 use Python 3.11, Blender 5.x use 3.13.
 try:
-    from . import pyretopo
+    from . import pyretopo  # Blender extension layout
     HAS_PYRETOPO = True
 except ImportError:
+    _addon_dir = os.path.dirname(os.path.abspath(__file__))
+    if _addon_dir not in sys.path:
+        sys.path.insert(0, _addon_dir)  # legacy add-on layout: .pyd sits next to this file
     try:
         import pyretopo
-        HAS_PYRETOPO = True
+        HAS_PYRETOPO = getattr(pyretopo, "__file__", None) is not None
     except ImportError:
-        addon_dir = os.path.dirname(os.path.abspath(__file__))
-        if addon_dir not in sys.path:
-            sys.path.insert(0, addon_dir)
-        try:
-            import pyretopo
-            HAS_PYRETOPO = True
-        except ImportError:
-            HAS_PYRETOPO = False
+        HAS_PYRETOPO = False
 
 
 class RETOPO_Properties(bpy.types.PropertyGroup):
@@ -147,38 +144,31 @@ class RETOPO_OT_retopologize(bpy.types.Operator):
 
         self.report({'INFO'}, f"Starting InstantMeshes 2026 retopology on {obj.name} (Target: {props.target_faces} faces)...")
 
-        # 1. Extract evaluated triangulated mesh data
+        # 1. Extract evaluated triangulated mesh data (NumPy fast path, read-only)
         depsgraph = context.evaluated_depsgraph_get()
         eval_obj = obj.evaluated_get(depsgraph)
         mesh = eval_obj.to_mesh()
 
-        # Triangulate temporarily for robust field calculation
-        import bmesh
-        bm = bmesh.new()
-        bm.from_mesh(mesh)
-        bmesh.ops.triangulate(bm, faces=bm.faces[:])
-        bm.to_mesh(mesh)
-        bm.free()
-
         num_verts = len(mesh.vertices)
-        num_faces = len(mesh.polygons)
+        loop_tris = mesh.loop_triangles
+        num_tris = len(loop_tris)
 
-        if num_verts == 0 or num_faces == 0:
+        if num_verts == 0 or num_tris == 0:
             self.report({'ERROR'}, "Mesh has no geometry!")
             eval_obj.to_mesh_clear()
             return {'CANCELLED'}
 
         # World matrix
-        world_mat = obj.matrix_world
+        m = np.array(obj.matrix_world, dtype=np.float64)
 
-        vertices = np.zeros((num_verts, 3), dtype=np.float32)
-        for i, v in enumerate(mesh.vertices):
-            co = world_mat @ v.co
-            vertices[i] = [co.x, co.y, co.z]
+        vertices = np.empty(num_verts * 3, dtype=np.float32)
+        mesh.vertices.foreach_get("co", vertices)
+        vertices = vertices.reshape((num_verts, 3))
+        vertices = (vertices @ m[:3, :3].T + m[:3, 3]).astype(np.float32)
 
-        faces = np.zeros((num_faces, 3), dtype=np.uint32)
-        for i, f in enumerate(mesh.polygons):
-            faces[i] = [f.vertices[0], f.vertices[1], f.vertices[2]]
+        faces = np.empty(num_tris * 3, dtype=np.int32)
+        loop_tris.foreach_get("vertices", faces)
+        faces = faces.reshape((num_tris, 3)).astype(np.uint32)
 
         eval_obj.to_mesh_clear()
 
@@ -210,23 +200,27 @@ class RETOPO_OT_retopologize(bpy.types.Operator):
 
         # B: Viewport Annotations / Grease Pencil
         if props.use_annotations:
-            for gp in bpy.data.grease_pencils:
-                for layer in gp.layers:
-                    for frame in layer.frames:
-                        for stroke in frame.strokes:
-                            if len(stroke.points) >= 2:
-                                pts = [[p.co.x, p.co.y, p.co.z] for p in stroke.points]
-                                p_first = stroke.points[0].co
-                                p_last = stroke.points[-1].co
-                                is_closed = (p_first - p_last).length < 0.05
-                                contour_data = {
-                                    "points": pts,
-                                    "is_edge_loop": True,
-                                    "is_closed": is_closed,
-                                    "weight": 1.0,
-                                    "mirror_x": props.mirror_x
-                                }
-                                contours.append(contour_data)
+            try:
+                for gp in bpy.data.grease_pencils:
+                    for layer in gp.layers:
+                        for frame in layer.frames:
+                            for stroke in frame.strokes:
+                                if len(stroke.points) >= 2:
+                                    pts = [[p.co.x, p.co.y, p.co.z] for p in stroke.points]
+                                    p_first = stroke.points[0].co
+                                    p_last = stroke.points[-1].co
+                                    is_closed = (p_first - p_last).length < 0.05
+                                    contour_data = {
+                                        "points": pts,
+                                        "is_edge_loop": True,
+                                        "is_closed": is_closed,
+                                        "weight": 1.0,
+                                        "mirror_x": props.mirror_x
+                                    }
+                                    contours.append(contour_data)
+            except Exception as ex:
+                # Annotation data-block API varies across Blender versions; never fail the remesh for it
+                self.report({'WARNING'}, f"Could not read annotation guides: {ex}")
 
         # 3. Run retopology engine
         out_verts = None
@@ -293,7 +287,7 @@ class RETOPO_OT_retopologize(bpy.types.Operator):
                     "InstantMeshes2026CLI.exe" if sys.platform == "win32" else "InstantMeshes2026CLI",
                     "InstantMeshesCLI.exe" if sys.platform == "win32" else "InstantMeshesCLI",
                 ]
-                cmd_exe = "InstantMeshes2026CLI"
+                cmd_exe = None
                 for cli_name in cli_candidates:
                     local_cli = os.path.join(os.path.dirname(os.path.abspath(__file__)), cli_name)
                     app_cli = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "InstantMeshes_App", cli_name)
@@ -303,6 +297,9 @@ class RETOPO_OT_retopologize(bpy.types.Operator):
                     elif os.path.exists(app_cli):
                         cmd_exe = app_cli
                         break
+                if cmd_exe is None:
+                    self.report({'ERROR'}, "InstantMeshes2026CLI executable not found next to the add-on.")
+                    return {'CANCELLED'}
 
                 cmd = [
                     cmd_exe,
@@ -310,10 +307,16 @@ class RETOPO_OT_retopologize(bpy.types.Operator):
                     "-a", str(props.adaptivity),
                     "-o", out_path,
                 ]
-                if props.pure_quad:
-                    pass
-                else:
+                if not props.pure_quad:
                     cmd.append("-D")
+                if props.intrinsic:
+                    cmd.append("-i")
+                if props.align_to_boundaries:
+                    cmd.append("-b")
+                if props.smooth_iterations != 2:
+                    cmd.extend(["-S", str(props.smooth_iterations)])
+                if props.crease_angle >= 0.0:
+                    cmd.extend(["-c", str(props.crease_angle)])
 
                 if contours:
                     with open(contour_path, "w") as f:
@@ -334,8 +337,11 @@ class RETOPO_OT_retopologize(bpy.types.Operator):
                     subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                     # Load result
                     bpy.ops.wm.obj_import(filepath=out_path)
-                    new_obj = context.selected_objects[0]
-                    new_obj.name = f"{obj.name}_Retopo"
+                    imported = [o for o in context.selected_objects if o.type == 'MESH']
+                    if not imported:
+                        self.report({'ERROR'}, "CLI retopology produced no importable object.")
+                        return {'CANCELLED'}
+                    imported[0].name = f"{obj.name}_Retopo"
                     self.report({'INFO'}, "Retopology completed successfully via CLI!")
                     return {'FINISHED'}
                 except Exception as e:
@@ -345,6 +351,7 @@ class RETOPO_OT_retopologize(bpy.types.Operator):
         # 4. Construct new Blender Mesh from NumPy arrays
         new_mesh = bpy.data.meshes.new(f"{obj.name}_Retopo_Mesh")
         new_mesh.from_pydata(out_verts.tolist(), [], out_faces.tolist())
+        new_mesh.validate()
         new_mesh.update()
 
         new_obj = bpy.data.objects.new(f"{obj.name}_Retopo", new_mesh)
@@ -427,7 +434,7 @@ def register():
     bpy.types.Scene.retopo_props = bpy.props.PointerProperty(type=RETOPO_Properties)
 
 
-def uninstall():
+def unregister():
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
     del bpy.types.Scene.retopo_props

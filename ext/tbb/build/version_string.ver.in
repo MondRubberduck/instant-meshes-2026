@@ -1,0 +1,11 @@
+/*
+    Minimal version-string template for the statically linked TBB build.
+
+    The original upstream template was dropped from version control by the
+    repository-wide build/ ignore rule. This defines the one macro that
+    src/tbb/tbb_version.h requires from the generated file; everything else
+    falls back to the values defined in that header.
+*/
+#define __TBB_VERSION_STRINGS(N) \
+    #N ": BUILD_HOST\tUnknown (static in-tree build)" ENDL \
+    #N ": BUILD_OS\t\tUnknown (static in-tree build)" ENDL
