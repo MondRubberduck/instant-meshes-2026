@@ -38,6 +38,11 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID MATCHES "G
   endif()
 endif()
 
+# Build everything as position-independent code: the pyretopo Python module
+# is a shared object that links retopo_core and tbb_static, which on Linux
+# requires -fPIC in those static libraries (Windows is unaffected).
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
 # Build TBB
 set(TBB_BUILD_STATIC ON CACHE BOOL " " FORCE)
 set(TBB_BUILD_SHARED OFF CACHE BOOL " " FORCE)
@@ -45,7 +50,8 @@ set(TBB_BUILD_TBBMALLOC OFF CACHE BOOL " " FORCE)
 set(TBB_BUILD_TBBMALLOC_PROXY OFF CACHE BOOL " " FORCE)
 set(TBB_BUILD_TESTS OFF CACHE BOOL " " FORCE)
 add_subdirectory(ext/tbb ext_build/tbb)
-set_property(TARGET tbb_static tbb_def_files PROPERTY FOLDER "dependencies")
+set_property(TARGET tbb_static PROPERTY POSITION_INDEPENDENT_CODE ON)
+set_property(TARGET tbb_def_files PROPERTY FOLDER "dependencies")
 
 # Locate Eigen
 set(EIGEN_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/ext/eigen")
