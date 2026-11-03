@@ -66,8 +66,8 @@ int main(int argc, char **argv) {
                     return -1;
                 }
                 smooth_iter = str_to_uint32_t(argv[i]);
-                if (smooth_iter < 1 || smooth_iter > 1000) {
-                    cerr << "Invalid smoothing iteration count \"" << argv[i] << "\" (expected 1..1000)!" << endl;
+                if (smooth_iter > 1000) {
+                    cerr << "Invalid smoothing iteration count \"" << argv[i] << "\" (expected 0..1000)!" << endl;
                     return -1;
                 }
             } else if (strcmp("--knn", argv[i]) == 0 || strcmp("-k", argv[i]) == 0) {

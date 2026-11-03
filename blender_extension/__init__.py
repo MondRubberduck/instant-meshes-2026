@@ -1,7 +1,7 @@
 bl_info = {
     "name": "InstantMeshes2026 Retopology",
     "author": "Antigravity / Instant Meshes 2026 Team (original by Jakob et al.)",
-    "version": (0, 3, 2),
+    "version": (1, 0, 0),
     "blender": (4, 2, 0),
     "location": "View3D > Sidebar > Retopo",
     "description": "InstantMeshes 2026 field-aligned quad retopology with adaptive density and contour flow guidance",
@@ -9,6 +9,7 @@ bl_info = {
 }
 
 import bpy
+from mathutils.geometry import interpolate_bezier
 import numpy as np
 import os
 import sys
@@ -29,6 +30,14 @@ except ImportError:
         HAS_PYRETOPO = getattr(pyretopo, "__file__", None) is not None
     except ImportError:
         HAS_PYRETOPO = False
+
+
+def _get_scene_annotations(context):
+    """Return the active scene's annotation data-block without touching user Grease Pencil objects."""
+    gp = getattr(context, "annotation_data", None)
+    if gp is None and context.scene is not None:
+        gp = getattr(context.scene, "grease_pencil", None)
+    return gp
 
 
 class RETOPO_Properties(bpy.types.PropertyGroup):
@@ -115,16 +124,17 @@ class RETOPO_OT_draw_guide(bpy.types.Operator):
 class RETOPO_OT_clear_guides(bpy.types.Operator):
     bl_idname = "mesh.instant_retopo_clear_guides"
     bl_label = "Clear Guides"
-    bl_description = "Clear all 3D Viewport Annotations"
+    bl_description = "Clear 3D Viewport Annotation guide strokes in the active scene"
 
     def execute(self, context):
         cleared = 0
-        for gp in bpy.data.grease_pencils:
+        gp = _get_scene_annotations(context)
+        if gp is not None:
             for layer in gp.layers:
                 for frame in layer.frames:
                     frame.strokes.clear()
                     cleared += 1
-        self.report({'INFO'}, f"Cleared {cleared} annotation layers/frames.")
+        self.report({'INFO'}, f"Cleared {cleared} annotation frame(s).")
         return {'FINISHED'}
 
 
@@ -158,8 +168,11 @@ class RETOPO_OT_retopologize(bpy.types.Operator):
             eval_obj.to_mesh_clear()
             return {'CANCELLED'}
 
-        # World matrix
-        m = np.array(obj.matrix_world, dtype=np.float64)
+        # World matrix and inverse for local pivot/transform preservation
+        world_mat = obj.matrix_world.copy()
+        inv_world_mat = world_mat.inverted_safe()
+        m = np.array(world_mat, dtype=np.float64)
+        m_inv = np.array(inv_world_mat, dtype=np.float64)
 
         vertices = np.empty(num_verts * 3, dtype=np.float32)
         mesh.vertices.foreach_get("co", vertices)
@@ -180,9 +193,25 @@ class RETOPO_OT_retopologize(bpy.types.Operator):
                 for spline in curve_obj.data.splines:
                     pts = []
                     if spline.type == 'BEZIER':
-                        for bp in spline.bezier_points:
-                            wco = c_mat @ bp.co
-                            pts.append([wco.x, wco.y, wco.z])
+                        bps = spline.bezier_points
+                        n_bps = len(bps)
+                        if n_bps >= 2:
+                            res = max(2, spline.resolution_u + 1)
+                            seg_count = n_bps if spline.use_cyclic_u else (n_bps - 1)
+                            for i in range(seg_count):
+                                bp0 = bps[i]
+                                bp1 = bps[(i + 1) % n_bps]
+                                seg = interpolate_bezier(
+                                    c_mat @ bp0.co,
+                                    c_mat @ bp0.handle_right,
+                                    c_mat @ bp1.handle_left,
+                                    c_mat @ bp1.co,
+                                    res
+                                )
+                                # Avoid duplicating knot between consecutive segments
+                                slice_pts = seg[:-1] if (i < seg_count - 1 or spline.use_cyclic_u) else seg
+                                for wco in slice_pts:
+                                    pts.append([wco.x, wco.y, wco.z])
                     else:
                         for p in spline.points:
                             wco = c_mat @ p.co.xyz
@@ -198,10 +227,11 @@ class RETOPO_OT_retopologize(bpy.types.Operator):
                         }
                         contours.append(contour_data)
 
-        # B: Viewport Annotations / Grease Pencil
+        # B: Viewport Annotations
         if props.use_annotations:
             try:
-                for gp in bpy.data.grease_pencils:
+                gp = _get_scene_annotations(context)
+                if gp is not None:
                     for layer in gp.layers:
                         for frame in layer.frames:
                             for stroke in frame.strokes:
@@ -266,7 +296,8 @@ class RETOPO_OT_retopologize(bpy.types.Operator):
             props.last_jacobian = f"min J = {qr.min_scaled_jacobian:.2f} ({qr.inverted_faces} inverted)"
             props.last_gate_status = "PASSED" if qr.passed_gates else "WARNING"
 
-            out_verts = result.vertices
+            # Transform world-space vertices back to object's local coordinate system
+            out_verts = (result.vertices @ m_inv[:3, :3].T + m_inv[:3, 3]).astype(np.float32)
             out_faces = result.faces
         else:
             # Fallback to CLI executable
@@ -335,13 +366,16 @@ class RETOPO_OT_retopologize(bpy.types.Operator):
 
                 try:
                     subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                    # Load result
-                    bpy.ops.wm.obj_import(filepath=out_path)
+                    # Import with matching Y-forward, Z-up axes so Blender does not rotate by 90 degrees
+                    bpy.ops.wm.obj_import(filepath=out_path, forward_axis='Y', up_axis='Z')
                     imported = [o for o in context.selected_objects if o.type == 'MESH']
                     if not imported:
                         self.report({'ERROR'}, "CLI retopology produced no importable object.")
                         return {'CANCELLED'}
-                    imported[0].name = f"{obj.name}_Retopo"
+                    imp_obj = imported[0]
+                    imp_obj.name = f"{obj.name}_Retopo"
+                    imp_obj.data.transform(inv_world_mat)
+                    imp_obj.matrix_world = world_mat
                     self.report({'INFO'}, "Retopology completed successfully via CLI!")
                     return {'FINISHED'}
                 except Exception as e:
@@ -355,6 +389,7 @@ class RETOPO_OT_retopologize(bpy.types.Operator):
         new_mesh.update()
 
         new_obj = bpy.data.objects.new(f"{obj.name}_Retopo", new_mesh)
+        new_obj.matrix_world = world_mat
         context.collection.objects.link(new_obj)
 
         # Select new object

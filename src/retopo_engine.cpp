@@ -92,25 +92,18 @@ RetopoOutput RetopoEngine::execute(const RetopoSettings &settings, const Progres
             A.setConstant(1.0f);
         }
 
-        // 1. Curvature-Adaptive Sizing and Target Poly Count
-        AdaptiveScaleResult scale_res = AdaptiveScaleManager::compute_scale_field(
+        // 1. Initial global scale estimate (to check whether input mesh needs subdivision)
+        AdaptiveScaleResult initial_scale_res = AdaptiveScaleManager::compute_scale_field(
             F, V, N, A,
             settings.target_vertex_count,
             settings.target_face_count,
             settings.scale,
-            settings.adaptivity,
+            0.0f,
             settings.posy,
             settings.pure_quad
         );
 
-        Float scale = scale_res.global_scale;
-        out.edge_length = scale;
-
-        std::cout << "[RetopoEngine] Goals: "
-                  << scale_res.target_vertex_count << " vertices, "
-                  << scale_res.target_face_count << " faces, "
-                  << "scale = " << scale << ", adaptivity = " << settings.adaptivity
-                  << ", contours = " << m_contour_system.count() << std::endl;
+        Float scale = initial_scale_res.global_scale;
 
         if (!pointcloud) {
             VectorXu V2E, E2E;
@@ -141,6 +134,26 @@ RetopoOutput RetopoEngine::execute(const RetopoSettings &settings, const Progres
             mRes.setE2E(std::move(E2E));
         }
 
+        // Compute curvature-adaptive local scale field on the finalized level-0 V, F, N, A
+        AdaptiveScaleResult scale_res = AdaptiveScaleManager::compute_scale_field(
+            F, V, N, A,
+            settings.target_vertex_count,
+            settings.target_face_count,
+            settings.scale,
+            settings.adaptivity,
+            settings.posy,
+            settings.pure_quad
+        );
+
+        scale = scale_res.global_scale;
+        out.edge_length = scale;
+
+        std::cout << "[RetopoEngine] Goals: "
+                  << scale_res.target_vertex_count << " vertices, "
+                  << scale_res.target_face_count << " faces, "
+                  << "scale = " << scale << ", adaptivity = " << settings.adaptivity
+                  << ", contours = " << m_contour_system.count() << std::endl;
+
         // 2. Build multi-resolution hierarchy
         mRes.setAdj(std::move(adj));
         mRes.setF(std::move(F));
@@ -148,6 +161,7 @@ RetopoOutput RetopoEngine::execute(const RetopoSettings &settings, const Progres
         mRes.setA(std::move(A));
         mRes.setN(std::move(N));
         mRes.setScale(scale);
+        mRes.setS(std::move(scale_res.local_scale));
         mRes.build(settings.deterministic, progress);
         mRes.resetSolution();
         mRes.clearConstraints();
@@ -160,7 +174,8 @@ RetopoOutput RetopoEngine::execute(const RetopoSettings &settings, const Progres
             bvh->build();
         }
 
-        // 4. Boundary alignment
+        // 4. Boundary and sharp crease alignment
+        bool has_boundary_or_crease_constraints = false;
         if (settings.align_to_boundaries && !pointcloud) {
             for (uint32_t i = 0; i < 3 * mRes.F().cols(); ++i) {
                 if (mRes.E2E()[i] == INVALID) {
@@ -174,9 +189,44 @@ RetopoOutput RetopoEngine::execute(const RetopoSettings &settings, const Progres
                         mRes.CO().col(i1) = p1;
                         mRes.CQ().col(i0) = mRes.CQ().col(i1) = edge;
                         mRes.CQw()[i0] = mRes.CQw()[i1] = mRes.COw()[i0] = mRes.COw()[i1] = 1.0f;
+                        has_boundary_or_crease_constraints = true;
                     }
                 }
             }
+        }
+
+        if (settings.crease_angle >= 0.0f && !pointcloud) {
+            const Float dp_threshold = std::cos(settings.crease_angle * M_PI / 180.0f);
+            for (uint32_t i = 0; i < 3 * mRes.F().cols(); ++i) {
+                uint32_t opp = mRes.E2E()[i];
+                if (opp != INVALID && i < opp) {
+                    Vector3f fn0 = mRes.faceNormal(i / 3);
+                    Vector3f fn1 = mRes.faceNormal(opp / 3);
+                    if (fn0.dot(fn1) < dp_threshold) {
+                        uint32_t i0 = mRes.F()(i % 3, i / 3);
+                        uint32_t i1 = mRes.F()((i + 1) % 3, i / 3);
+                        Vector3f p0 = mRes.V().col(i0), p1 = mRes.V().col(i1);
+                        Vector3f edge = p1 - p0;
+                        if (edge.squaredNorm() > 0.0f) {
+                            edge.normalize();
+                            Vector3f n0 = mRes.N().col(i0), n1 = mRes.N().col(i1);
+                            Vector3f t0 = edge - n0 * n0.dot(edge);
+                            Vector3f t1 = edge - n1 * n1.dot(edge);
+                            if (t0.squaredNorm() > 1e-8f)
+                                mRes.CQ().col(i0) = t0.normalized();
+                            if (t1.squaredNorm() > 1e-8f)
+                                mRes.CQ().col(i1) = t1.normalized();
+                            mRes.CO().col(i0) = p0;
+                            mRes.CO().col(i1) = p1;
+                            mRes.CQw()[i0] = mRes.CQw()[i1] = mRes.COw()[i0] = mRes.COw()[i1] = 1.0f;
+                            has_boundary_or_crease_constraints = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (has_boundary_or_crease_constraints) {
             mRes.propagateConstraints(settings.rosy, settings.posy);
         }
 
@@ -218,7 +268,7 @@ RetopoOutput RetopoEngine::execute(const RetopoSettings &settings, const Progres
         // 9. Mesh extraction
         MatrixXf O_extr, N_extr, Nf_extr;
         std::vector<std::vector<TaggedLink>> adj_extr;
-        extract_graph(mRes, true, settings.rosy, settings.posy, adj_extr, O_extr, N_extr,
+        extract_graph(mRes, !settings.intrinsic, settings.rosy, settings.posy, adj_extr, O_extr, N_extr,
                       crease_in, crease_out, settings.deterministic);
 
         MatrixXu F_extr;

@@ -17,6 +17,7 @@
 #include <unordered_map>
 #include <fstream>
 #include <limits>
+#include <memory>
 #if !defined(_WIN32)
 #include <libgen.h>
 #endif
@@ -398,14 +399,6 @@ void load_obj(const std::string &filename, MatrixXu &F, MatrixXf &V,
                 throw std::runtime_error("Invalid vertex data: \"" + string + "\"");
 
             p = str_to_uint32_t(tokens[0]);
-
-            #if 0
-                if (tokens.size() >= 2 && !tokens[1].empty())
-                    uv = str_to_uint32_t(tokens[1]);
-
-                if (tokens.size() >= 3 && !tokens[2].empty())
-                    n = str_to_uint32_t(tokens[2]);
-            #endif
         }
 
         inline bool operator==(const obj_vertex &v) const {
@@ -433,11 +426,20 @@ void load_obj(const std::string &filename, MatrixXu &F, MatrixXf &V,
     Timer<> timer;
 
     std::vector<Vector3f>   positions;
-    //std::vector<Vector2f>   texcoords;
-    //std::vector<Vector3f>   normals;
     std::vector<uint32_t>   indices;
     std::vector<obj_vertex> vertices;
     VertexMap vertexMap;
+
+    auto get_or_add_vertex = [&](const obj_vertex &v) -> uint32_t {
+        VertexMap::const_iterator it = vertexMap.find(v);
+        if (it == vertexMap.end()) {
+            uint32_t idx = (uint32_t)vertices.size();
+            vertexMap[v] = idx;
+            vertices.push_back(v);
+            return idx;
+        }
+        return it->second;
+    };
 
     std::string line_str;
     while (std::getline(is, line_str)) {
@@ -450,46 +452,24 @@ void load_obj(const std::string &filename, MatrixXu &F, MatrixXf &V,
             Vector3f p;
             line >> p.x() >> p.y() >> p.z();
             positions.push_back(p);
-        } else if (prefix == "vt") {
-            /*
-            Vector2f tc;
-            line >> tc.x() >> tc.y();
-            texcoords.push_back(tc);
-            */
-        } else if (prefix == "vn") {
-            /*
-            Vector3f n;
-            line >> n.x() >> n.y() >> n.z();
-            normals.push_back(n);
-            */
         } else if (prefix == "f") {
-            std::string v1, v2, v3, v4;
-            line >> v1 >> v2 >> v3 >> v4;
-            obj_vertex tri[6];
-            int nVertices = 3;
-
-            tri[0] = obj_vertex(v1);
-            tri[1] = obj_vertex(v2);
-            tri[2] = obj_vertex(v3);
-
-            if (!v4.empty()) {
-                /* This is a quad, split into two triangles */
-                tri[3] = obj_vertex(v4);
-                tri[4] = tri[0];
-                tri[5] = tri[2];
-                nVertices = 6;
+            std::string v_tok;
+            std::vector<obj_vertex> poly;
+            while (line >> v_tok) {
+                poly.push_back(obj_vertex(v_tok));
             }
-            /* Convert to an indexed vertex list */
-            for (int i=0; i<nVertices; ++i) {
-                const obj_vertex &v = tri[i];
-                VertexMap::const_iterator it = vertexMap.find(v);
-                if (it == vertexMap.end()) {
-                    vertexMap[v] = (uint32_t) vertices.size();
-                    indices.push_back((uint32_t) vertices.size());
-                    vertices.push_back(v);
-                } else {
-                    indices.push_back(it->second);
-                }
+            if (poly.size() < 3)
+                continue;
+
+            /* Fan-triangulate triangles, quads, and arbitrary n-gons (>= 5 vertices) */
+            uint32_t i0 = get_or_add_vertex(poly[0]);
+            uint32_t prev = get_or_add_vertex(poly[1]);
+            for (size_t k = 2; k < poly.size(); ++k) {
+                uint32_t cur = get_or_add_vertex(poly[k]);
+                indices.push_back(i0);
+                indices.push_back(prev);
+                indices.push_back(cur);
+                prev = cur;
             }
         }
     }
@@ -514,28 +494,60 @@ void load_fbx(const std::string &filename, MatrixXu &F, MatrixXf &V, MatrixXf &N
     ufbx_load_opts opts = { 0 };
     opts.target_axes = ufbx_axes_right_handed_y_up;
     opts.target_unit_meters = 1.0f;
-    opts.generate_missing_normals = true;
+    opts.generate_missing_normals = false;
 
     ufbx_error error;
-    ufbx_scene *scene = ufbx_load_file(filename.c_str(), &opts, &error);
-    if (!scene) {
+    ufbx_scene *raw_scene = ufbx_load_file(filename.c_str(), &opts, &error);
+    if (!raw_scene) {
         throw std::runtime_error("Failed to load FBX file \"" + filename + "\": " + std::string(error.description.data));
     }
+    std::unique_ptr<ufbx_scene, void(*)(ufbx_scene*)> scene(raw_scene, ufbx_free_scene);
 
+    struct WeldedPosKey {
+        int64_t x, y, z;
+        bool operator==(const WeldedPosKey &o) const {
+            return x == o.x && y == o.y && z == o.z;
+        }
+    };
+    struct WeldedPosKeyHash {
+        std::size_t operator()(const WeldedPosKey &k) const {
+            size_t h = std::hash<int64_t>()(k.x);
+            h = h * 1315423911u + std::hash<int64_t>()(k.y);
+            h = h * 1315423911u + std::hash<int64_t>()(k.z);
+            return h;
+        }
+    };
+
+    std::unordered_map<WeldedPosKey, uint32_t, WeldedPosKeyHash> weld_map;
     std::vector<Vector3f> positions;
     std::vector<uint32_t> indices;
+
+    auto get_or_weld_vertex = [&](const Vector3f &pos) -> uint32_t {
+        WeldedPosKey key{
+            (int64_t)std::llround((double)pos.x() * 1e6),
+            (int64_t)std::llround((double)pos.y() * 1e6),
+            (int64_t)std::llround((double)pos.z() * 1e6)
+        };
+        auto it = weld_map.find(key);
+        if (it != weld_map.end())
+            return it->second;
+        uint32_t idx = (uint32_t)positions.size();
+        weld_map[key] = idx;
+        positions.push_back(pos);
+        return idx;
+    };
 
     auto process_mesh = [&](const ufbx_mesh *mesh, const ufbx_matrix &geom_to_world) {
         if (!mesh || mesh->num_vertices == 0 || mesh->faces.count == 0)
             return;
 
-        uint32_t vertex_offset = (uint32_t) positions.size();
-
-        // 1. Transform and store all logical vertices
+        // 1. Transform and weld logical vertices across seams/submeshes
+        std::vector<uint32_t> local_to_global(mesh->num_vertices);
         for (size_t vi = 0; vi < mesh->num_vertices; ++vi) {
             ufbx_vec3 local_pos = mesh->vertices.data[vi];
             ufbx_vec3 world_pos = ufbx_transform_position(&geom_to_world, local_pos);
-            positions.push_back(Vector3f((Float) world_pos.x, (Float) world_pos.y, (Float) world_pos.z));
+            Vector3f p((Float)world_pos.x, (Float)world_pos.y, (Float)world_pos.z);
+            local_to_global[vi] = get_or_weld_vertex(p);
         }
 
         // 2. Triangulate faces
@@ -553,13 +565,15 @@ void load_fbx(const std::string &filename, MatrixXu &F, MatrixXf &V, MatrixXf &N
                 uint32_t c1 = tri_buf[ti * 3 + 1];
                 uint32_t c2 = tri_buf[ti * 3 + 2];
 
-                uint32_t v0 = vertex_offset + mesh->vertex_indices.data[c0];
-                uint32_t v1 = vertex_offset + mesh->vertex_indices.data[c1];
-                uint32_t v2 = vertex_offset + mesh->vertex_indices.data[c2];
+                uint32_t v0 = local_to_global[mesh->vertex_indices.data[c0]];
+                uint32_t v1 = local_to_global[mesh->vertex_indices.data[c1]];
+                uint32_t v2 = local_to_global[mesh->vertex_indices.data[c2]];
 
-                indices.push_back(v0);
-                indices.push_back(v1);
-                indices.push_back(v2);
+                if (v0 != v1 && v1 != v2 && v2 != v0) {
+                    indices.push_back(v0);
+                    indices.push_back(v1);
+                    indices.push_back(v2);
+                }
             }
         }
     };
@@ -579,7 +593,7 @@ void load_fbx(const std::string &filename, MatrixXu &F, MatrixXf &V, MatrixXf &N
         }
     }
 
-    ufbx_free_scene(scene);
+    scene.reset();
 
     if (positions.empty() || indices.empty()) {
         throw std::runtime_error("FBX file \"" + filename + "\" contains no mesh geometry!");

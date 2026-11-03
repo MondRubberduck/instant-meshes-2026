@@ -907,7 +907,6 @@ template <typename CompatFunctor, typename RoundFunctor> static inline Float opt
     const std::vector<std::vector<uint32_t>> &phases = mRes.phases(level);
     const AdjacencyMatrix &adj = mRes.adj(level);
     const MatrixXf &N = mRes.N(level), &Q = mRes.Q(level), &V = mRes.V(level);
-    const Float scale = mRes.scale(), inv_scale = 1.0f / scale;
     const std::vector<uint32_t> *phase = nullptr;
     const MatrixXf &CQ = mRes.CQ(level);
     const MatrixXf &CO = mRes.CO(level);
@@ -940,8 +939,11 @@ template <typename CompatFunctor, typename RoundFunctor> static inline Float opt
                     q_j.normalize();
                 #endif
 
+                const Float edge_scale = mRes.edgeScale(level, i, j);
+                const Float inv_edge_scale = 1.0f / edge_scale;
+
                 std::pair<Vector3f, Vector3f> value = compat_functor(
-                    v_i, n_i, q_i, sum, v_j, n_j, q_j, o_j, scale, inv_scale);
+                    v_i, n_i, q_i, sum, v_j, n_j, q_j, o_j, edge_scale, inv_edge_scale);
 
                 sum = value.first*weight_sum + value.second*weight;
                 weight_sum += weight;
@@ -961,8 +963,10 @@ template <typename CompatFunctor, typename RoundFunctor> static inline Float opt
                 }
             }
 
-            if (weight_sum > 0)
-                O.col(i) = round_functor(sum, q_i, n_i, v_i, scale, inv_scale);
+            if (weight_sum > 0) {
+                const Float loc_scale = mRes.localScale(level, i);
+                O.col(i) = round_functor(sum, q_i, n_i, v_i, loc_scale, 1.0f / loc_scale);
+            }
         }
     };
 
@@ -992,8 +996,9 @@ template <typename CompatFunctor, typename RoundFunctor> static inline Float opt
                     q_j.normalize();
                 #endif
                 const Vector3f t_j = n_j.cross(q_j);
+                const Float edge_scale = mRes.edgeScale(level, i, j);
 
-                sum += o_j + scale * (
+                sum += o_j + edge_scale * (
                       q_j * link->ivar[1].translate_u
                     + t_j * link->ivar[1].translate_v
                     - q_i * link->ivar[0].translate_u
@@ -1030,7 +1035,6 @@ static inline Float error_positions_impl(const MultiResolutionHierarchy &mRes,
     const AdjacencyMatrix &adj = mRes.adj(level);
     const MatrixXf &N = mRes.N(level), &Q = mRes.Q(level);
     const MatrixXf &O = mRes.O(level), &V = mRes.V(level);
-    const Float scale = mRes.scale(), inv_scale = 1.0f / scale;
 
     auto map = [&](const tbb::blocked_range<uint32_t> &range, Float error) -> Float {
         for (uint32_t i = range.begin(); i<range.end(); ++i) {
@@ -1048,8 +1052,9 @@ static inline Float error_positions_impl(const MultiResolutionHierarchy &mRes,
                     q_j.normalize();
                 #endif
 
+                const Float edge_scale = mRes.edgeScale(level, i, j);
                 std::pair<Vector3f, Vector3f> value = functor(
-                    v_i, n_i, q_i, o_i, v_j, n_j, q_j, o_j, scale, inv_scale);
+                    v_i, n_i, q_i, o_i, v_j, n_j, q_j, o_j, edge_scale, 1.0f / edge_scale);
 
                 error += (value.first-value.second).cast<double>().squaredNorm();
             }
@@ -1117,8 +1122,6 @@ void compute_position_singularities(
     tbb::spin_mutex mutex;
     pos_sing.clear();
 
-    const Float scale = mRes.scale(), inv_scale = 1.0f / scale;
-
     tbb::parallel_for(
         tbb::blocked_range<uint32_t>(0u, (uint32_t) F.cols(), GRAIN_SIZE),
         [&](const tbb::blocked_range<uint32_t> &range) {
@@ -1152,14 +1155,16 @@ void compute_position_singularities(
                 for (int k=0; k<3; ++k)
                     q[k] = rotateFunctor_rosy(q[k], n[k], best[k]);
 
+                uint32_t f_verts[3] = { i0, i1, i2 };
                 for (int k=0; k<3; ++k) {
                     int kn = k == 2 ? 0 : (k+1);
+                    const Float edge_scale = mRes.edgeScale(0, f_verts[k], f_verts[kn]);
 
                     std::pair<Vector2i, Vector2i> value =
                         compatPositionIndex(
                             v[k],  n[k],  q[k],  o[k],
                             v[kn], n[kn], q[kn], o[kn],
-                            scale, inv_scale, nullptr);
+                            edge_scale, 1.0f / edge_scale, nullptr);
 
                     index += value.first - value.second;
                 }
@@ -1178,7 +1183,6 @@ static inline void freeze_ivars_positions_impl(MultiResolutionHierarchy &mRes,
                                                int level, Functor functor) {
     const AdjacencyMatrix &adj = mRes.adj(level);
     const MatrixXf &N = mRes.N(level), &Q = mRes.Q(level), &V = mRes.V(level), &O = mRes.O(level);
-    const Float scale = mRes.scale(), inv_scale = 1.0f / scale;
 
     auto map = [&](const tbb::blocked_range<uint32_t> &range) {
         for (uint32_t i = range.begin(); i<range.end(); ++i) {
@@ -1197,10 +1201,11 @@ static inline void freeze_ivars_positions_impl(MultiResolutionHierarchy &mRes,
                     q_j.normalize();
                 #endif
 
+                const Float edge_scale = mRes.edgeScale(level, i, j);
                 std::pair<Vector2i, Vector2i> value = functor(
                     v_i, n_i, q_i, o_i,
                     v_j, n_j, q_j, o_j,
-                    scale, inv_scale, nullptr);
+                    edge_scale, 1.0f / edge_scale, nullptr);
 
                 link->ivar[0].translate_u = value.first.x();
                 link->ivar[0].translate_v = value.first.y();

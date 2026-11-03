@@ -6,6 +6,7 @@
 
 #include "extraction_sanitizer.h"
 #include "dedge.h"
+#include "bvh.h"
 #include <iostream>
 #include <map>
 #include <set>
@@ -105,7 +106,6 @@ size_t ExtractionSanitizer::sanitize_coarse_quads(
     }
 
     // 4. Manifold star enforcement: split pinched vertices into 2-manifold disks
-    // Build vertex -> incident faces mapping
     std::vector<std::vector<uint32_t>> v2f(nV);
     for (uint32_t f = 0; f < nF; ++f) {
         if (F(0, f) == INVALID)
@@ -132,7 +132,6 @@ size_t ExtractionSanitizer::sanitize_coarse_quads(
         for (size_t a = 0; a < inc_faces.size(); ++a) {
             uint32_t fa = inc_faces[a];
             int deg_a = (F.rows() == 4 && F(2, fa) == F(3, fa)) ? 3 : (int)F.rows();
-            // Find neighbors of v in fa
             uint32_t prev_a = INVALID, next_a = INVALID;
             for (int i = 0; i < deg_a; ++i) {
                 if (F(i, fa) == v) {
@@ -190,10 +189,8 @@ size_t ExtractionSanitizer::sanitize_coarse_quads(
             components.push_back(comp);
         }
 
-        // If vertex v has multiple disconnected fans, it's a non-manifold pinch vertex!
+        // If vertex v has multiple disconnected fans, split into 2-manifold disks
         if (components.size() > 1) {
-            // First component stays with vertex v.
-            // For components 1..n-1, assign a new vertex instance.
             bool is_crease_vert = (crease.find(v) != crease.end());
             for (size_t c = 1; c < components.size(); ++c) {
                 uint32_t v_new = nV + (uint32_t)new_V_pos.size();
@@ -229,7 +226,7 @@ size_t ExtractionSanitizer::sanitize_coarse_quads(
         }
     }
 
-    // Compact faces: remove INVALID rows
+    // Compact faces: remove INVALID columns
     uint32_t valid_faces = 0;
     for (uint32_t f = 0; f < nF; ++f) {
         if (F(0, f) != INVALID) {
@@ -250,11 +247,69 @@ size_t ExtractionSanitizer::sanitize_coarse_quads(
     return issues_resolved;
 }
 
+static Float evaluate_quad_min_jacobian(
+    uint32_t f,
+    const MatrixXu &F,
+    const MatrixXf &O,
+    const MatrixXf &N
+) {
+    if (F.rows() != 4 || F(0, f) == INVALID || F(2, f) == F(3, f))
+        return 1.0f;
+
+    uint32_t nV = (uint32_t)O.cols();
+    uint32_t idx[4] = { F(0, f), F(1, f), F(2, f), F(3, f) };
+    if (idx[0] >= nV || idx[1] >= nV || idx[2] >= nV || idx[3] >= nV)
+        return -1.0f;
+
+    Vector3f p[4] = { O.col(idx[0]), O.col(idx[1]), O.col(idx[2]), O.col(idx[3]) };
+    Float min_j = 1.0f;
+    for (int i = 0; i < 4; ++i) {
+        Vector3f e_in = p[i] - p[(i + 3) % 4];
+        Vector3f e_out = p[(i + 1) % 4] - p[i];
+        Float l_in = e_in.norm(), l_out = e_out.norm();
+        if (l_in < 1e-10f || l_out < 1e-10f)
+            return -1.0f;
+        Vector3f corner_norm = N.col(idx[i]);
+        Float j = e_in.cross(e_out).dot(corner_norm) / (l_in * l_out);
+        if (j < min_j)
+            min_j = j;
+    }
+    return min_j;
+}
+
+static void recompute_face_normal(
+    uint32_t f,
+    const MatrixXu &F,
+    const MatrixXf &O,
+    const MatrixXf &N,
+    MatrixXf &Nf
+) {
+    if (f >= (uint32_t)Nf.cols() || F(0, f) == INVALID)
+        return;
+    int rows = (int)F.rows();
+    Vector3f centroid = Vector3f::Zero(), avgNormal = Vector3f::Zero();
+    for (int j = 0; j < rows; ++j) {
+        uint32_t k = F(j, f);
+        centroid += O.col(k);
+        avgNormal += N.col(k);
+    }
+    centroid /= (Float)rows;
+    Matrix3f cov = Matrix3f::Zero();
+    for (int j = 0; j < rows; ++j) {
+        uint32_t k = F(j, f);
+        cov += (O.col(k) - centroid) * (O.col(k) - centroid).transpose();
+    }
+    Vector3f n = cov.jacobiSvd(Eigen::ComputeFullU).matrixU().col(2).normalized();
+    Nf.col(f) = n * signum(avgNormal.dot(n));
+}
+
 size_t ExtractionSanitizer::sanitize_final_mesh(
     MatrixXu &F,
     MatrixXf &O,
     MatrixXf &N,
-    MatrixXf &Nf
+    MatrixXf &Nf,
+    BVH *bvh,
+    Float scale
 ) {
     if (F.cols() == 0 || O.cols() == 0)
         return 0;
@@ -263,7 +318,7 @@ size_t ExtractionSanitizer::sanitize_final_mesh(
     uint32_t nF = (uint32_t)F.cols();
     uint32_t nV = (uint32_t)O.cols();
 
-    // Check for zero-area or collapsed faces in final mesh
+    // 1. Check for zero-area or collapsed faces in final mesh
     for (uint32_t f = 0; f < nF; ++f) {
         if (F(0, f) == INVALID)
             continue;
@@ -289,7 +344,7 @@ size_t ExtractionSanitizer::sanitize_final_mesh(
         }
     }
 
-    // Check and repair inverted/folded quads
+    // 2. First pass: flip quads whose overall normal is inverted relative to vertex normals
     for (uint32_t f = 0; f < nF; ++f) {
         if (F(0, f) == INVALID)
             continue;
@@ -301,62 +356,152 @@ size_t ExtractionSanitizer::sanitize_final_mesh(
             Vector3f avg_norm = N.col(idx[0]) + N.col(idx[1]) + N.col(idx[2]) + N.col(idx[3]);
             Float an = avg_norm.norm();
             if (an < 1e-6f)
-                continue; /* cancelling vertex normals (sharp fold): a normalized()
-                              here would be NaN and silently disable the checks below */
+                continue;
             avg_norm /= an;
             Vector3f fn = ((p[1] - p[0]).cross(p[3] - p[0]) + (p[3] - p[2]).cross(p[1] - p[2]));
             if (fn.norm() > 1e-6f)
                 fn.normalize();
 
-            // 1. If overall normal is opposite to vertex normal, flip winding
             if (fn.dot(avg_norm) < 0.0f) {
                 std::swap(idx[1], idx[3]);
                 F.col(f) << idx[0], idx[1], idx[2], idx[3];
-                std::swap(p[1], p[3]);
-                fn = -fn;
+                recompute_face_normal(f, F, O, N, Nf);
                 cleaned++;
-            }
-
-            // 2. Check each corner for reflex/inverted angles and untangle
-            for (int iters = 0; iters < 3; ++iters) {
-                Float min_j = 1.0f;
-                int worst_corner = -1;
-                for (int i = 0; i < 4; ++i) {
-                    Vector3f e_in = p[i] - p[(i + 3) % 4];
-                    Vector3f e_out = p[(i + 1) % 4] - p[i];
-                    Float l_in = e_in.norm(), l_out = e_out.norm();
-                    if (l_in > 1e-6f && l_out > 1e-6f) {
-                        Float j = e_in.cross(e_out).dot(avg_norm) / (l_in * l_out);
-                        if (j < min_j) {
-                            min_j = j;
-                            worst_corner = i;
-                        }
-                    }
-                }
-
-                if (min_j <= 0.01f && worst_corner >= 0) {
-                    // Untangle reflex corner by moving towards convex side of chord
-                    uint32_t opp = (worst_corner + 2) % 4;
-                    uint32_t prev = (worst_corner + 3) % 4;
-                    uint32_t next = (worst_corner + 1) % 4;
-                    Vector3f chord_mid = (p[prev] + p[next]) * 0.5f;
-                    Vector3f outward_dir = (chord_mid - p[opp]);
-                    if (outward_dir.norm() > 1e-6f) {
-                        Vector3f target_pos = chord_mid + outward_dir * 0.3f;
-                        p[worst_corner] = target_pos;
-                        O.col(idx[worst_corner]) = target_pos;
-                        cleaned++;
-                    } else {
-                        break;
-                    }
-                } else {
-                    break;
-                }
             }
         }
     }
 
-    // Compact F and Nf
+    // 3. Build vertex -> incident faces adjacency so corner untangling never inverts neighbor faces
+    std::vector<std::vector<uint32_t>> v2f(nV);
+    for (uint32_t f = 0; f < nF; ++f) {
+        if (F(0, f) == INVALID)
+            continue;
+        int deg = (F.rows() == 4 && F(2, f) == F(3, f)) ? 3 : (int)F.rows();
+        for (int i = 0; i < deg; ++i) {
+            uint32_t v = F(i, f);
+            if (v < nV)
+                v2f[v].push_back(f);
+        }
+    }
+
+    auto project_to_surface = [&](const Vector3f &pos, const Vector3f &n) -> Vector3f {
+        if (bvh && bvh->F()->size() > 0 && scale > 0.0f) {
+            Ray ray1(pos,  n, 0, scale * 0.5f);
+            Ray ray2(pos, -n, 0, scale * 0.5f);
+            uint32_t idx1 = 0, idx2 = 0;
+            Float t1 = 0, t2 = 0;
+            bvh->rayIntersect(ray1, idx1, t1);
+            bvh->rayIntersect(ray2, idx2, t2);
+            if (std::min(t1, t2) < scale * 0.5f)
+                return t1 < t2 ? ray1(t1) : ray2(t2);
+        }
+        return pos;
+    };
+
+    // 4. Neighbor-aware reflex corner relaxation
+    for (uint32_t f = 0; f < nF; ++f) {
+        if (F(0, f) == INVALID || F.rows() != 4 || F(2, f) == F(3, f))
+            continue;
+
+        for (int iters = 0; iters < 3; ++iters) {
+            uint32_t idx[4] = { F(0, f), F(1, f), F(2, f), F(3, f) };
+            Vector3f p[4] = { O.col(idx[0]), O.col(idx[1]), O.col(idx[2]), O.col(idx[3]) };
+
+            Float min_j = 1.0f;
+            int worst_corner = -1;
+            for (int i = 0; i < 4; ++i) {
+                Vector3f e_in = p[i] - p[(i + 3) % 4];
+                Vector3f e_out = p[(i + 1) % 4] - p[i];
+                Float l_in = e_in.norm(), l_out = e_out.norm();
+                if (l_in > 1e-10f && l_out > 1e-10f) {
+                    Float j = e_in.cross(e_out).dot(N.col(idx[i])) / (l_in * l_out);
+                    if (j < min_j) {
+                        min_j = j;
+                        worst_corner = i;
+                    }
+                }
+            }
+
+            if (min_j > 0.01f || worst_corner < 0)
+                break;
+
+            uint32_t v_target = idx[worst_corner];
+            const auto &inc_faces = v2f[v_target];
+
+            auto eval_star_min_j = [&]() -> Float {
+                Float star_min = 1.0f;
+                for (uint32_t nf : inc_faces) {
+                    Float fj = evaluate_quad_min_jacobian(nf, F, O, N);
+                    if (fj < star_min)
+                        star_min = fj;
+                }
+                return star_min;
+            };
+
+            Vector3f orig_pos = O.col(v_target);
+            Vector3f v_norm = N.col(v_target);
+            Float best_star_j = eval_star_min_j();
+            Vector3f best_pos = orig_pos;
+            bool improved = false;
+
+            uint32_t opp = (worst_corner + 2) % 4;
+            uint32_t prev = (worst_corner + 3) % 4;
+            uint32_t next = (worst_corner + 1) % 4;
+            Vector3f chord_mid = (p[prev] + p[next]) * 0.5f;
+            Vector3f outward_dir = chord_mid - p[opp];
+
+            std::vector<Vector3f> candidates;
+            if (outward_dir.norm() > 1e-6f) {
+                for (Float alpha : {0.1f, 0.2f, 0.3f, -0.1f, -0.2f}) {
+                    Vector3f cand = chord_mid + outward_dir * alpha;
+                    cand -= v_norm * v_norm.dot(cand - orig_pos);
+                    candidates.push_back(project_to_surface(cand, v_norm));
+                }
+            }
+
+            // Also try 1-ring centroid relaxation across incident faces
+            Vector3f ring_sum = Vector3f::Zero();
+            int ring_count = 0;
+            for (uint32_t nf : inc_faces) {
+                int deg = (F.rows() == 4 && F(2, nf) == F(3, nf)) ? 3 : (int)F.rows();
+                for (int k = 0; k < deg; ++k) {
+                    if (F(k, nf) != v_target) {
+                        ring_sum += O.col(F(k, nf));
+                        ring_count++;
+                    }
+                }
+            }
+            if (ring_count > 0) {
+                Vector3f ring_avg = ring_sum / (Float)ring_count;
+                for (Float beta : {0.25f, 0.5f, 0.75f, 1.0f}) {
+                    Vector3f cand = orig_pos * (1.0f - beta) + ring_avg * beta;
+                    cand -= v_norm * v_norm.dot(cand - orig_pos);
+                    candidates.push_back(project_to_surface(cand, v_norm));
+                }
+            }
+
+            for (const Vector3f &cand : candidates) {
+                O.col(v_target) = cand;
+                Float star_j = eval_star_min_j();
+                if (star_j > best_star_j + 1e-4f) {
+                    best_star_j = star_j;
+                    best_pos = cand;
+                    improved = true;
+                }
+            }
+
+            O.col(v_target) = best_pos;
+            if (improved) {
+                for (uint32_t nf : inc_faces)
+                    recompute_face_normal(nf, F, O, N, Nf);
+                cleaned++;
+            } else {
+                break;
+            }
+        }
+    }
+
+    // 5. Compact F and Nf
     uint32_t valid_faces = 0;
     for (uint32_t f = 0; f < nF; ++f) {
         if (F(0, f) != INVALID) {

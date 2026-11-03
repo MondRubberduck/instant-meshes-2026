@@ -98,6 +98,7 @@ PYBIND11_MODULE(pyretopo, m) {
         .def_readwrite("pure_quad", &RetopoSettings::pure_quad)
         .def_readwrite("deterministic", &RetopoSettings::deterministic)
         .def_readwrite("smooth_iterations", &RetopoSettings::smooth_iterations)
+        .def_readwrite("knn_points", &RetopoSettings::knn_points)
         .def_readwrite("filter_singularities", &RetopoSettings::filter_singularities)
         .def_readwrite("mirror_x", &RetopoSettings::mirror_x)
         .def_readwrite("intrinsic", &RetopoSettings::intrinsic);
@@ -107,6 +108,7 @@ PYBIND11_MODULE(pyretopo, m) {
         .def_property_readonly("vertices", [](const RetopoOutput &o) { return MatrixXf(o.V.transpose()); })
         .def_property_readonly("faces", [](const RetopoOutput &o) { return MatrixXu(o.F.transpose()); })
         .def_property_readonly("normals", [](const RetopoOutput &o) { return MatrixXf(o.N.transpose()); })
+        .def_property_readonly("face_normals", [](const RetopoOutput &o) { return MatrixXf(o.Nf.transpose()); })
         .def_readonly("vertex_count", &RetopoOutput::vertex_count)
         .def_readonly("face_count", &RetopoOutput::face_count)
         .def_readonly("edge_length", &RetopoOutput::edge_length)
@@ -140,7 +142,11 @@ PYBIND11_MODULE(pyretopo, m) {
                the GIL so other Python threads (e.g. Blender's UI) keep running. */
             py::gil_scoped_release release;
             return engine.execute(settings);
-        }, py::arg("settings"));
+        }, py::arg("settings"))
+        .def_static("save_mesh", [](const std::string &filename, const RetopoOutput &output) {
+            py::gil_scoped_release release;
+            return RetopoEngine::save_mesh(filename, output);
+        }, py::arg("filename"), py::arg("output"));
 
     m.def("retopologize", [](
         const MatrixXf &vertices, 
@@ -155,7 +161,12 @@ PYBIND11_MODULE(pyretopo, m) {
         int smooth_iterations,
         bool filter_singularities,
         bool mirror_x,
-        bool intrinsic
+        bool intrinsic,
+        int rosy,
+        int posy,
+        Float scale,
+        bool deterministic,
+        int knn_points
     ) -> RetopoOutput {
         if (vertices.cols() != 3)
             throw py::value_error("vertices must have shape (N, 3)");
@@ -171,13 +182,18 @@ PYBIND11_MODULE(pyretopo, m) {
             engine.add_contour(c);
 
         RetopoSettings settings;
+        settings.rosy = rosy;
+        settings.posy = posy;
+        settings.scale = scale;
         settings.target_face_count = target_faces;
         settings.target_vertex_count = target_vertices;
         settings.adaptivity = adaptivity;
         settings.crease_angle = crease_angle;
         settings.align_to_boundaries = align_to_boundaries;
         settings.pure_quad = pure_quad;
+        settings.deterministic = deterministic;
         settings.smooth_iterations = smooth_iterations;
+        settings.knn_points = knn_points;
         settings.filter_singularities = filter_singularities;
         settings.mirror_x = mirror_x;
         settings.intrinsic = intrinsic;
@@ -198,6 +214,11 @@ PYBIND11_MODULE(pyretopo, m) {
     py::arg("filter_singularities") = true,
     py::arg("mirror_x") = false,
     py::arg("intrinsic") = false,
+    py::arg("rosy") = 4,
+    py::arg("posy") = 4,
+    py::arg("scale") = -1.0f,
+    py::arg("deterministic") = false,
+    py::arg("knn_points") = 10,
     "High-level retopology function returning RetopoOutput directly from input vertex and face arrays."
     );
 }

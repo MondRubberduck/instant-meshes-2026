@@ -37,11 +37,16 @@ extract_graph(const MultiResolutionHierarchy &mRes, bool extrinsic, int rosy, in
               bool remove_unnecessary_edges,
               bool snap_vertices) {
 
-    Float scale = mRes.scale(), inv_scale = 1 / scale;
+    Float scale = mRes.scale();
 
-    auto compat_orientation = rosy == 2 ? compat_orientation_extrinsic_2 :
-        (rosy == 4 ? compat_orientation_extrinsic_4 : compat_orientation_extrinsic_6);
-    auto compat_position = posy == 4 ? compat_position_extrinsic_index_4 : compat_position_extrinsic_index_3;
+    auto compat_orientation = extrinsic ?
+        (rosy == 2 ? compat_orientation_extrinsic_2 :
+         (rosy == 4 ? compat_orientation_extrinsic_4 : compat_orientation_extrinsic_6)) :
+        (rosy == 2 ? compat_orientation_intrinsic_2 :
+         (rosy == 4 ? compat_orientation_intrinsic_4 : compat_orientation_intrinsic_6));
+    auto compat_position = extrinsic ?
+        (posy == 4 ? compat_position_extrinsic_index_4 : compat_position_extrinsic_index_3) :
+        (posy == 4 ? compat_position_intrinsic_index_4 : compat_position_intrinsic_index_3);
 
     const MatrixXf &Q = mRes.Q(), &O = mRes.O(), &N = mRes.N(), &V = mRes.V();
     const VectorXf &COw = mRes.COw();
@@ -73,10 +78,11 @@ extract_graph(const MultiResolutionHierarchy &mRes, bool extrinsic, int rosy, in
                             Q.col(i), N.col(i), Q.col(j), N.col(j));
 
                     Float error = 0;
+                    const Float edge_scale = mRes.edgeScale(0, i, j);
                     std::pair<Vector2i, Vector2i> shift = compat_position(
                             V.col(i), N.col(i), Q_rot.first, O.col(i),
                             V.col(j), N.col(j), Q_rot.second, O.col(j),
-                            scale, inv_scale, &error);
+                            edge_scale, 1.0f / edge_scale, &error);
 
                     Vector2i absDiff = (shift.first-shift.second).cwiseAbs();
 
@@ -281,7 +287,8 @@ extract_graph(const MultiResolutionHierarchy &mRes, bool extrinsic, int rosy, in
                         continue;
                     uint32_t j = it->second;
 
-                    Float weight = std::exp(-(O.col(i)-V.col(i)).squaredNorm() * inv_scale * inv_scale * 9);
+                    const Float inv_loc_scale = 1.0f / mRes.localScale(0, i);
+                    Float weight = std::exp(-(O.col(i)-V.col(i)).squaredNorm() * inv_loc_scale * inv_loc_scale * 9);
                     if (COw.size() != 0 && COw[i] != 0) {
                         tbb::spin_mutex::scoped_lock lock(mutex);
                         crease_out.insert(j);
@@ -869,6 +876,12 @@ void extract_faces(std::vector<std::vector<TaggedLink> > &adj, MatrixXf &O,
     N.conservativeResize(3, nV);
     O.conservativeResize(3, nV);
 
+    if (pure_quad || irregular_faces.empty()) {
+        ExtractionSanitizer::sanitize_coarse_quads(F, O, N, crease);
+        nF = (uint32_t)F.cols();
+        nV = (uint32_t)O.cols();
+    }
+
     if (smooth_iterations > 0) {
         cout << "Step 10: Running " << smooth_iterations << " smoothing & reprojection steps ..";
         cout.flush();
@@ -1031,6 +1044,10 @@ void extract_faces(std::vector<std::vector<TaggedLink> > &adj, MatrixXf &O,
             for (uint32_t i=0; i<f.size(); ++i)
                 Nf.col(f[i]) = n;
         }
+        if (!irregular_faces.empty()) {
+            ExtractionSanitizer::sanitize_coarse_quads(F, O, N, crease);
+            Nf.conservativeResize(3, F.cols());
+        }
     }
 
 #if REMOVE_NONMANIFOLD
@@ -1040,7 +1057,7 @@ void extract_faces(std::vector<std::vector<TaggedLink> > &adj, MatrixXf &O,
 #endif
 
     // QEx-style final topological verification and hardening
-    ExtractionSanitizer::sanitize_final_mesh(F, O, N, Nf);
+    ExtractionSanitizer::sanitize_final_mesh(F, O, N, Nf, bvh, scale);
 
     cout << "Step 12: Reordering mesh for efficient access .. ";
     cout.flush();

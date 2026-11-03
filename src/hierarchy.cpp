@@ -393,6 +393,7 @@ MultiResolutionHierarchy::MultiResolutionHierarchy() {
     if (sizeof(Link) != 12)
         throw std::runtime_error("Adjacency matrix entries are not packed! Investigate compiler settings.");
     mA.reserve(MAX_DEPTH+1);
+    mS.reserve(MAX_DEPTH+1);
     mV.reserve(MAX_DEPTH+1);
     mN.reserve(MAX_DEPTH+1);
     mQ.reserve(MAX_DEPTH+1);
@@ -425,6 +426,13 @@ void MultiResolutionHierarchy::build(bool deterministic, const ProgressCallback 
     mCQ.push_back(MatrixXf());
     mCQw.push_back(VectorXf());
 
+    if (mS.empty() || mS[0].size() != mV[0].cols()) {
+        mS.clear();
+        mS.push_back(VectorXf::Constant(mV[0].cols(), mScale));
+    } else if (mS.size() > 1) {
+        mS.resize(1);
+    }
+
     cout << "Building multiresolution hierarchy .." << endl;
     Timer<> timer;
     for (int i=0; i<MAX_DEPTH; ++i) {
@@ -443,12 +451,30 @@ void MultiResolutionHierarchy::build(bool deterministic, const ProgressCallback 
         else
             generate_graph_coloring(adj_p, V_p.cols(), phases_p, progress);
 
+        VectorXf S_p(V_p.cols());
+        const VectorXf &S_cur = mS[i];
+        const VectorXf &A_cur = mA[i];
+        for (uint32_t k = 0; k < (uint32_t)V_p.cols(); ++k) {
+            uint32_t u0 = toUpper(0, k);
+            uint32_t u1 = toUpper(1, k);
+            if (u1 != INVALID) {
+                Float a0 = A_cur[u0], a1 = A_cur[u1], a_sum = a0 + a1;
+                if (a_sum > RCPOVERFLOW)
+                    S_p[k] = (S_cur[u0] * a0 + S_cur[u1] * a1) / a_sum;
+                else
+                    S_p[k] = 0.5f * (S_cur[u0] + S_cur[u1]);
+            } else {
+                S_p[k] = S_cur[u0];
+            }
+        }
+
         mTotalSize += V_p.cols();
         mPhases.push_back(std::move(phases_p));
         mAdj.push_back(std::move(adj_p));
         mV.push_back(std::move(V_p));
         mN.push_back(std::move(N_p));
         mA.push_back(std::move(A_p));
+        mS.push_back(std::move(S_p));
         mToUpper.push_back(std::move(toUpper));
         mToLower.push_back(std::move(toLower));
         mCO.push_back(MatrixXf());
@@ -461,6 +487,37 @@ void MultiResolutionHierarchy::build(bool deterministic, const ProgressCallback 
     mIterationsQ = mIterationsO = -1;
     mFrozenO = mFrozenQ = false;
     cout << "Hierarchy construction took " << timeString(timer.value()) << "." << endl;
+}
+
+void MultiResolutionHierarchy::updateScaleField(const VectorXf &S0) {
+    if (mV.empty())
+        return;
+    mS.resize(mV.size());
+    if (S0.size() == mV[0].cols()) {
+        mS[0] = S0;
+    } else {
+        mS[0] = VectorXf::Constant(mV[0].cols(), mScale);
+    }
+    for (size_t i = 0; i + 1 < mV.size(); ++i) {
+        uint32_t next_cols = (uint32_t)mV[i + 1].cols();
+        mS[i + 1].resize(next_cols);
+        const VectorXf &S_cur = mS[i];
+        const VectorXf &A_cur = mA[i];
+        const MatrixXu &toUpper = mToUpper[i];
+        for (uint32_t k = 0; k < next_cols; ++k) {
+            uint32_t u0 = toUpper(0, k);
+            uint32_t u1 = toUpper(1, k);
+            if (u1 != INVALID) {
+                Float a0 = A_cur[u0], a1 = A_cur[u1], a_sum = a0 + a1;
+                if (a_sum > RCPOVERFLOW)
+                    mS[i + 1][k] = (S_cur[u0] * a0 + S_cur[u1] * a1) / a_sum;
+                else
+                    mS[i + 1][k] = 0.5f * (S_cur[u0] + S_cur[u1]);
+            } else {
+                mS[i + 1][k] = S_cur[u0];
+            }
+        }
+    }
 }
 
 void init_random_tangent(const MatrixXf &N, MatrixXf &Q) {
@@ -518,7 +575,7 @@ void MultiResolutionHierarchy::free() {
         delete[] mAdj[i];
     }
     mAdj.clear(); mV.clear(); mQ.clear();
-    mO.clear(); mN.clear(); mA.clear();
+    mO.clear(); mN.clear(); mA.clear(); mS.clear();
     mCQ.clear(); mCO.clear();
     mCQw.clear(); mCOw.clear();
     mToUpper.clear(); mToLower.clear();
@@ -749,8 +806,6 @@ void MultiResolutionHierarchy::propagateConstraints(int rosy, int posy) {
     else
         throw std::runtime_error("Unsupported symmetry!");
 
-    Float scale = mScale, inv_scale = 1/mScale;
-
     for (int l=0; l<levels()-1; ++l)  {
         const MatrixXf &N = mN[l];
         const MatrixXf &N_next = mN[l+1];
@@ -805,10 +860,12 @@ void MultiResolutionHierarchy::propagateConstraints(int rosy, int posy) {
                     } else if (has_co1 && has_co0) {
                         cow = COw[upper[0]] + COw[upper[1]];
                         if (CQ.col(upper[0]).squaredNorm() > 1e-4f && CQ.col(upper[1]).squaredNorm() > 1e-4f) {
+                            Float edge_s = edgeScale(l, upper[0], upper[1]);
+                            Float inv_edge_s = 1.0f / edge_s;
                             auto result = compat_pos(
                                 V.col(upper[0]), N.col(upper[0]), CQ.col(upper[0]), CO.col(upper[0]), 
                                 V.col(upper[1]), N.col(upper[1]), CQ.col(upper[1]), CO.col(upper[1]),
-                                scale, inv_scale
+                                edge_s, inv_edge_s
                             );
                             co = (result.first * COw[upper[0]] + result.second * COw[upper[1]]) / cow;
                         } else {

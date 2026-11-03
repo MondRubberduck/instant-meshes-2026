@@ -49,6 +49,7 @@ public:
     inline const MatrixXf &V(int level = 0) const { return mV[level]; }
     inline const MatrixXf &N(int level = 0) const { return mN[level]; }
     inline const VectorXf &A(int level = 0) const { return mA[level]; }
+    inline const VectorXf &S(int level = 0) const { return mS[level]; }
     inline const MatrixXu &toUpper(int level) const { return mToUpper[level]; }
     inline const VectorXu &toLower(int level) const { return mToLower[level]; }
     inline const MatrixXf &Q(int level = 0) const { return mQ[level]; }
@@ -65,18 +66,40 @@ public:
     inline MatrixXf &CO(int level = 0) { return mCO[level]; }
     inline VectorXf &CQw(int level = 0) { return mCQw[level]; }
     inline VectorXf &COw(int level = 0) { return mCOw[level]; }
+    inline VectorXf &S(int level = 0) { return mS[level]; }
 
     inline void setF(MatrixXu &&F) { mF = std::move(F); }
     inline void setE2E(VectorXu &&E2E) { mE2E = std::move(E2E); }
     inline void setV(MatrixXf &&V) { mV.clear(); mV.push_back(std::move(V)); }
     inline void setN(MatrixXf &&N) { mN.clear(); mN.push_back(std::move(N)); }
     inline void setA(MatrixXf &&A) { mA.clear(); mA.push_back(std::move(A)); }
+    inline void setS(VectorXf &&S) { mS.clear(); mS.push_back(std::move(S)); }
+    void updateScaleField(const VectorXf &S0);
     inline void setAdj(AdjacencyMatrix &&adj) { mAdj.clear(); mAdj.push_back(std::move(adj)); }
 
     inline uint32_t size(int level = 0) const { return mV[level].cols(); }
 
     inline Float scale() const { return mScale; }
     inline void setScale(Float scale) { mScale = scale; }
+    inline Float localScale(int level, uint32_t i) const {
+        if (level < (int)mS.size() && i < (uint32_t)mS[level].size()) {
+            Float s = mS[level][i];
+            if (s > RCPOVERFLOW)
+                return s;
+        }
+        return mScale;
+    }
+    inline Float edgeScale(int level, uint32_t i, uint32_t j) const {
+        if (level < (int)mS.size()) {
+            const VectorXf &s = mS[level];
+            if (i < (uint32_t)s.size() && j < (uint32_t)s.size()) {
+                Float es = 0.5f * (s[i] + s[j]);
+                if (es > RCPOVERFLOW)
+                    return es;
+            }
+        }
+        return mScale;
+    }
     inline int iterationsQ() const { return mIterationsQ; }
     inline void setIterationsQ(int iterationsQ) { mIterationsQ = iterationsQ; }
     inline int iterationsO() const { return mIterationsO; }
@@ -114,6 +137,7 @@ public:
     std::vector<MatrixXf> mV;
     std::vector<MatrixXf> mN;
     std::vector<VectorXf> mA;
+    std::vector<VectorXf> mS;
     std::vector<VectorXu> mToLower;
     std::vector<MatrixXu> mToUpper;
     std::vector<MatrixXf> mO;

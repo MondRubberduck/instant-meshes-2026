@@ -428,6 +428,19 @@ Viewer::Viewer(bool fullscreen, bool deterministic)
         mAdaptivityBox->setValue(tmp);
     });
 
+    mAdaptivitySlider->setFinalCallback([&](Float value) {
+        mAdaptivity = value;
+        if (mRes.levels() > 0) {
+            std::lock_guard<ordered_lock> lock(mRes.mutex());
+            AdaptiveScaleResult scale_res = AdaptiveScaleManager::compute_scale_field(
+                mRes.F(), mRes.V(), mRes.N(), mRes.A(),
+                -1, -1, mRes.scale(), mAdaptivity,
+                mOptimizer.posy(), mPureQuadBox && mPureQuadBox->checked()
+            );
+            mRes.updateScaleField(scale_res.local_scale);
+        }
+    });
+
     new Label(window, "Orientation field", "sans-bold");
     Widget *orientTools = new Widget(window);
     new Label(orientTools, "Tool:        ", "sans-bold");
@@ -782,6 +795,12 @@ void Viewer::setTargetScale(Float scale) {
     setTargetVertexCount(vertex_count);
     std::lock_guard<ordered_lock> lock(mRes.mutex());
     mRes.setScale(scale);
+    AdaptiveScaleResult scale_res = AdaptiveScaleManager::compute_scale_field(
+        mRes.F(), mRes.V(), mRes.N(), mRes.A(),
+        -1, -1, scale, mAdaptivity,
+        posy, mPureQuadBox && mPureQuadBox->checked()
+    );
+    mRes.updateScaleField(scale_res.local_scale);
 }
 
 void Viewer::setTargetVertexCount(uint32_t v) {
@@ -814,6 +833,12 @@ void Viewer::setTargetVertexCount(uint32_t v) {
 
     std::lock_guard<ordered_lock> lock(mRes.mutex());
     mRes.setScale(scale);
+    AdaptiveScaleResult scale_res = AdaptiveScaleManager::compute_scale_field(
+        mRes.F(), mRes.V(), mRes.N(), mRes.A(),
+        -1, -1, scale, mAdaptivity,
+        posy, mPureQuadBox && mPureQuadBox->checked()
+    );
+    mRes.updateScaleField(scale_res.local_scale);
 }
 
 void Viewer::setTargetVertexCountPrompt(uint32_t v) {
@@ -1506,11 +1531,6 @@ void Viewer::extractMesh() {
         return;
     int rosy = mOptimizer.rosy(), posy = mOptimizer.posy();
     repaint();
-
-    // Modern QuadriFlow-inspired dipole regularization
-    if (mFilterSingularitiesBox && mFilterSingularitiesBox->checked() && rosy == 4 && posy == 4) {
-        SingularityFilter::regularize_singularities(mRes, rosy, mRes.scale() * 2.5f);
-    }
 
     Timer<> timer;
     std::vector<std::vector<TaggedLink>> adj_extracted;
@@ -2393,6 +2413,13 @@ void Viewer::drawContents() {
     if (!mOptimizer.active()) {
         if (mSolveOrientationBtn->pushed()) {
             mSolveOrientationBtn->setPushed(false);
+            if (mFilterSingularitiesBox && mFilterSingularitiesBox->checked() &&
+                mOptimizer.rosy() == 4 && mOptimizer.posy() == 4) {
+                std::lock_guard<ordered_lock> lock(mRes.mutex());
+                SingularityFilter::regularize_singularities(
+                    mRes, mOptimizer.rosy(), mRes.scale() * 2.5f, mExtrinsicBox->checked());
+                mOrientationSingularityShader.resetAttribVersion("position");
+            }
             refreshOrientationSingularities();
             if (mContinueWithPositions) {
                 mSolvePositionBtn->setPushed(true);
@@ -3243,11 +3270,13 @@ void Viewer::loadInput(std::string filename, Float creaseAngle, Float scale,
                 mNonmanifoldVertices, mProgress);
 
         /* Compute an adjacency matrix */
-        //AdjacencyMatrix adj = generate_adjacency_matrix_cotan(
-            //mRes.F(), mRes.V(), V2E, E2E, mNonmanifoldVertices, mProgress);
-        adj = generate_adjacency_matrix_uniform(
-            mRes.F(), V2E, E2E, mNonmanifoldVertices, mProgress);
-        mRes.setAdj(std::move(adj));
+        if (mExtrinsicBox && !mExtrinsicBox->checked()) {
+            adj = generate_adjacency_matrix_cotan(
+                mRes.F(), mRes.V(), V2E, E2E, mNonmanifoldVertices, mProgress);
+        } else {
+            adj = generate_adjacency_matrix_uniform(
+                mRes.F(), V2E, E2E, mNonmanifoldVertices, mProgress);
+        }
 
         /* Generate crease normals. This changes F and V */
         mCreaseMap.clear();

@@ -139,9 +139,17 @@ extern Float
 optimize_orientations(MultiResolutionHierarchy &mRes, int level, bool extrinsic,
                       int rosy, const std::function<void(uint32_t)> &progress);
 
+extern void
+freeze_ivars_orientations(MultiResolutionHierarchy &mRes, int level,
+                          bool extrinsic, int rosy);
+
 extern Float optimize_positions(MultiResolutionHierarchy &mRes, int level,
                                 bool extrinsic, int posy,
                                 const std::function<void(uint32_t)> &progress);
+
+extern void
+freeze_ivars_positions(MultiResolutionHierarchy &mRes, int level,
+                       bool extrinsic, int posy);
 
 /* Singularity computation */
 

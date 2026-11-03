@@ -23,14 +23,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install GUI dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libx11-dev libxcursor-dev libxrandr-dev libxinerama-dev \
+            libxi-dev libxext-dev libxkbcommon-dev libxxf86vm-dev \
+            libgl1-mesa-dev libglu1-mesa-dev
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
 
-      - name: Configure (headless CLI + pyretopo)
+      - name: Configure (GUI + CLI + pyretopo)
         shell: pwsh
         run: |
-          cmake -S . -B build -DINSTANT_MESHES_BUILD_GUI=OFF
+          cmake -S . -B build -DINSTANT_MESHES_BUILD_GUI=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5
         env:
           Python_ROOT: ${{ env.pythonLocation }}
 
@@ -79,6 +88,7 @@ jobs:
         with:
           name: windows-headless-build
           path: |
+            build/**/InstantMeshes2026.exe
             build/**/InstantMeshes2026CLI.exe
             build/**/pyretopo*.pyd
           if-no-files-found: error
