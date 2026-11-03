@@ -37,9 +37,9 @@ jobs:
           python-version: "3.13"
 
       - name: Configure (GUI + CLI + pyretopo)
-        shell: pwsh
+        shell: bash
         run: |
-          cmake -S . -B build -DINSTANT_MESHES_BUILD_GUI=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          cmake -S . -B build -DINSTANT_MESHES_BUILD_GUI=ON "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
         env:
           Python_ROOT: ${{ env.pythonLocation }}
 
@@ -53,12 +53,14 @@ jobs:
         if: failure()
         shell: bash
         run: |
-          {
-            echo '### Build failure — last 150 lines of build.log'
-            echo '```'
-            tail -n 150 build.log
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          if [ -f build.log ]; then
+            {
+              echo '### Build failure — last 150 lines of build.log'
+              echo '```'
+              tail -n 150 build.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Install numpy
         run: python -m pip install numpy
